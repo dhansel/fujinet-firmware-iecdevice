@@ -6,7 +6,7 @@
 #include <string>
 #include <unordered_map>
 
-#include "../../bus/bus.h"
+#include "../../bus/iec/IECFileDevice.h"
 #include "../../media/media.h"
 #include "../meatloaf/meatloaf.h"
 #include "../meatloaf/meat_buffer.h"
@@ -18,182 +18,113 @@
 
 #define PRODUCT_ID "MEATLOAF CBM"
 
-class iecDrive : public virtualDevice
+class iecDrive;
+
+class iecChannelHandler
 {
-private:
-    // /**
-    //  * @brief the active bus protocol
-    //  */
-    // std::shared_ptr<DOS> _dos = nullptr;
+ public:
+  iecChannelHandler(iecDrive *drive);
+  virtual ~iecChannelHandler();
 
-    // /**
-    //  * @brief Switch to detected bus protocol
-    //  */
-    // std::shared_ptr<DOS> selectDOS();
+  uint8_t read(uint8_t *data, uint8_t n);
+  uint8_t write(uint8_t *data, uint8_t n);
 
-protected:
-    //MediaType *_disk = nullptr;
+  virtual uint8_t writeBufferData() = 0;
+  virtual uint8_t readBufferData()  = 0;
 
-    std::unique_ptr<MFile> _base;   // Always points to current directory/image
-    std::string _last_file;         // Always points to last loaded file
+ protected:
+  iecDrive *m_drive;
+  uint8_t  *m_data;
+  size_t    m_len, m_ptr;
+};
 
-    // RAM/ROM
-//    std::streambuf ram;
-    std::unique_ptr<MFile> rom;     // ROM File for current drive model if available
 
-    // Directory
-    uint16_t sendHeader(std::string header, std::string id);
-    uint16_t sendLine(uint16_t blocks, char *text);
-    uint16_t sendLine(uint16_t blocks, const char *format, ...);
-    uint16_t sendFooter();
-    void sendListing();
+class iecChannelHandlerFile : public iecChannelHandler
+{
+ public: 
+  iecChannelHandlerFile(iecDrive *drive, MStream *stream, int fixLoadAddress = -1);
+  virtual ~iecChannelHandlerFile();
 
-    // File
-    bool sendFile();
-    bool saveFile();
-    void sendFileNotFound();
+  virtual uint8_t readBufferData();
+  virtual uint8_t writeBufferData();
 
-    // Named Channel functions
-    bool registerStream (uint8_t channel);
-    std::shared_ptr<MStream> retrieveStream ( uint8_t channel );
-    bool closeStream ( uint8_t channel, bool close_all = false );
-    uint16_t retrieveLastByte ( uint8_t channel );
-    void storeLastByte( uint8_t channel, char last);
-    void flushLastByte( uint8_t channel );
+ private:
+  MStream *m_stream;
+  int      m_fixLoadAddress;
+};
 
-    struct _error_response
-    {
-        unsigned char errnum = 73;
-        std::string msg = "CBM DOS V2.6 1541";
-        unsigned char track = 0;
-        unsigned char sector = 0;
-    } error_response;
 
-    void read();
-    void write(bool verify);
-    void format();
+class iecChannelHandlerDir : public iecChannelHandler
+{
+ public: 
+  iecChannelHandlerDir(iecDrive *drive, MFile *dir);
+  virtual ~iecChannelHandlerDir();
 
-protected:
-#if 0
-    /**
-     * @brief Process command fanned out from bus
-     * @return new device state
-     */
-    device_state_t process() override;
-#else
-    virtual device_state_t openChannel(/*int chan, IECPayload &payload*/) override;
-    virtual device_state_t closeChannel(/*int chan*/) override;
-    virtual device_state_t readChannel(/*int chan*/) override;
-    virtual device_state_t writeChannel(/*int chan, IECPayload &payload*/) override;
-#endif
+  virtual uint8_t readBufferData();
+  virtual uint8_t writeBufferData();
 
-    /**
-     * @brief process command for channel 0 (load)
-     */
-    void process_load();
+ private:
+  void addExtraInfo(std::string title, std::string text);
+  
+  MFile   *m_dir;
+  uint8_t  m_headerLine;
+  std::vector<std::string> m_headers;
+};
 
-    /**
-     * @brief process command for channel 1 (save)
-     */
-    void process_save();
 
-    /**
-     * @brief process command channel
-     */
-    void process_command();
 
-#if 0
-    /**
-     * @brief process every other channel (2-14)
-     */
-    void process_channel();
-#endif
+class iecDrive : public IECFileDevice
+{
+ public:
+  iecDrive(uint8_t devnum = 0xFF);
+  ~iecDrive();
 
-    /**
-     * @brief called to open a connection to a protocol
-     */
-    void iec_open();
+  mediatype_t mount(FILE *f, const char *filename, uint32_t disksize, mediatype_t disk_type = MEDIATYPE_UNKNOWN);
+  void unmount();
 
-    /**
-     * @brief called to close a connection.
-     */
-    void iec_close();
-    
-    /**
-     * @brief called when a TALK, then REOPEN happens on channel 0
-     */
-    void iec_reopen_load();
+  int     id() { return m_devnr; };
+  uint8_t getNumOpenChannels() { return m_numOpenChannels; }
+  uint8_t getStatusCode() { return m_statusCode; }
+  void    setStatusCode(uint8_t code, uint8_t trk = 0);
+  bool    hasError();
 
-    /**
-     * @brief called when TALK, then REOPEN happens on channel 1
-     */
-    void iec_reopen_save();
+ private:
+  // open file "name" on channel
+  virtual void open(byte channel, const char *name);
 
-#if 0
-    /**
-     * @brief called when REOPEN (to send/receive data)
-     */
-    void iec_reopen_channel();
+  // close file on channel
+  virtual void close(byte channel);
 
-    /**
-     * @brief called when channel needs to listen for data from c=
-     */
-    void iec_reopen_channel_listen();
-#endif
+  // write bufferSize bytes to file on channel, returning the number of bytes written
+  // Returning less than bufferSize signals "cannot receive more data" for this file
+  virtual byte write(byte channel, byte *buffer, byte bufferSize);
 
-    /**
-     * @brief called when channel needs to talk data to c=
-     */
-    void iec_reopen_channel_talk();
+  // read up to bufferSize bytes from file in channel, returning the number of bytes read
+  // returning 0 will signal end-of-file to the receiver. Returning 0
+  // for the FIRST call after open() signals an error condition
+  // (e.g. C64 load command will show "file not found")
+  virtual byte read(byte channel, byte *buffer, byte bufferSize);
 
-    /**
-     * @brief called when LISTEN happens on command channel (15).
-     */
-    void iec_listen_command();
+  // called when the bus master reads from channel 15 and the status
+  // buffer is currently empty. this should populate buffer with an appropriate 
+  // status message bufferSize is the maximum allowed length of the message
+  virtual void getStatus(char *buffer, byte bufferSize);
 
-    /**
-     * @brief called when TALK happens on command channel (15).
-     */
-    void iec_talk_command();
+  // called when the bus master sends data (i.e. a command) to channel 15
+  // command is a 0-terminated string representing the command to execute
+  // commandLen contains the full length of the received command (useful if
+  // the command itself may contain zeros)
+  virtual void execute(const char *command, byte cmdLen);
 
-    /**
-     * @brief called to process command either at open or listen
-     */
-    void iec_command();
+  // called on falling edge of RESET line
+  virtual void reset();
 
-    /**
-     * @brief Set device ID from dos command
-     */
-    void set_device_id();
+  void set_cwd(std::string path);
 
-    /**
-     * @brief Set desired prefix for channel
-     */
-    void set_prefix();
-
-    /**
-     * @brief Get prefix for channel
-     */
-    void get_prefix();
-
-    /**
-     * @brief If response queue is empty, Return 1 if ANY receive buffer has data in it, else 0
-     */
-    void iec_talk_command_buffer_status() override;
-
-public:
-    iecDrive();
-    fujiHost *host;
-    mediatype_t mount(FILE *f, const char *filename, uint32_t disksize, mediatype_t disk_type = MEDIATYPE_UNKNOWN);
-    void unmount();
-    bool write_blank(FILE *f, uint16_t sectorSize, uint16_t numSectors);
-
-    //mediatype_t disktype() { return _disk == nullptr ? MEDIATYPE_UNKNOWN : _disk->_mediatype; };
-
-    std::unordered_map<uint16_t, std::shared_ptr<MStream>> streams;
-    std::unordered_map<uint16_t, uint16_t> streamLastByte;
-
-    ~iecDrive();
+  fujiHost *m_host;
+  std::unique_ptr<MFile> m_cwd;   // current working directory
+  iecChannelHandler *m_channels[16];
+  uint8_t m_statusCode, m_statusTrk, m_numOpenChannels;
 };
 
 #endif // DRIVE_H

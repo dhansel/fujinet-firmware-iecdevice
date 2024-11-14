@@ -57,9 +57,9 @@ size_t oiecstream::sendBytesViaIEC() {
     for(auto b = pbase(); b < pptr()-1; b++) {
         //Serial.printf("%c",*b);
         //Serial.printf("%c[%.2X]",*b, *b);
-        bool sendSuccess = m_iec->sendByte(*b);
-        //bool sendSuccess = true;
-        if(sendSuccess && !(IEC.flags bitand ATN_ASSERTED) ) written++;
+        //bool sendSuccess = m_iec->sendByte(*b);
+        bool sendSuccess = true;
+        if(sendSuccess /*&& !(IEC.flags bitand ATN_ASSERTED)*/ ) written++;
         else if(!sendSuccess) {
             // JAIME: what should happen here? should the badbit be set when send returns false?
             setstate(badbit);

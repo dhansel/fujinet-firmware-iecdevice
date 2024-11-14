@@ -77,7 +77,7 @@ public:
             if(pptr()-pbase() == 1) {
                 char last = data[0];
                 Debug_printv("closing, sending EOI with [%.2X] %c", last, last);
-                m_iec->sendByte(last, true);
+                //m_iec->sendByte(last, true);
                 setp(data, data+IEC_BUFFER_SIZE);
             }
 
