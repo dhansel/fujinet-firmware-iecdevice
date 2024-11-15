@@ -186,6 +186,7 @@ static unsigned long timer_start_us;
 #define P_TALKING    0x20
 #define P_DONE       0x10
 #define P_RESET      0x08
+#define P_DELAYREL   0x04
 
 #define S_JIFFY_ENABLED          0x0001  // JiffyDos support is enabled
 #define S_JIFFY_DETECTED         0x0002  // Detected JiffyDos request from host
@@ -1850,7 +1851,7 @@ bool IECBusHandler::receiveIECByte(bool canWriteOk)
 #ifdef SUPPORT_JIFFY
       if( !waitPinCLK(HIGH, 200) )
         {
-          IECDevice *dev = findDevice((data>>1)&0x0F);
+          IECDevice *dev = findDevice((data>>1)&0x1F);
           JDEBUG0();
           if( (m_flags & P_ATN)==0 && !readPinATN() )
             { interrupts(); return false; }
@@ -1887,6 +1888,9 @@ bool IECBusHandler::receiveIECByte(bool canWriteOk)
 
   if( m_flags & P_ATN )
     {
+      // Acknowledge receipt by pulling DATA low
+      writePinDATA(LOW);
+
       // We are currently receiving under ATN.  Store first two 
       // bytes received(contain primary and secondary address)
       if( m_primary == 0 )
@@ -1897,10 +1901,12 @@ bool IECBusHandler::receiveIECByte(bool canWriteOk)
       if( (m_primary != 0x3f) && (m_primary != 0x5f) && findDevice((unsigned int) m_primary & 0x1f)==NULL )
         {
           // This is NOT an UNLISTEN (0x3f) or UNTALK (0x5f)
-          // command and the primary address is not ours =>
-          // Do not acknowledge the frame and stop listening.
-          // If all devices on the bus do this, the bus master
-          // knows that "Device not present"
+          // command and the primary address is not ours => stop listening,
+          // but give the host some time to see our frame acknowledgement
+          // before releasing DATA
+          m_flags |= P_DELAYREL;
+          m_timeoutStart    = micros();
+          m_timeoutDuration = 150;
           return false;
         }
       else
@@ -1915,7 +1921,7 @@ bool IECBusHandler::receiveIECByte(bool canWriteOk)
           //      if received pull outgoing parallel handshake signal LOW to confirm
           //  LOW->HIGH edge on ATN, 
           //      if so then timeout, host does not support DolphinDos
-          IECDevice *dev = findDevice(m_primary & 0x0F);
+          IECDevice *dev = findDevice(m_primary & 0x1F);
           if( dev!=NULL && (dev->m_sflags & S_DOLPHIN_ENABLED) && m_secondary!=0 )
             {
               // clear any previous handshakes
@@ -2032,7 +2038,7 @@ void IECBusHandler::atnRequest()
 {
   // falling edge on ATN detected (bus master addressing all devices)
   m_flags |= P_ATN;
-  m_flags &= ~P_DONE;
+  m_flags &= ~(P_DONE|P_DELAYREL);
   m_currentDevice = NULL;
   m_primary = 0;
   m_secondary = 0;
@@ -2353,10 +2359,19 @@ void IECBusHandler::task()
           if( !receiveIECByte(numData>0) )
             {
               // receive failed => transaction is done
-              writePinDATA(HIGH);
               m_flags |= P_DONE;
+
+              // if we are not delaying the DATA release then release
+              // release it now
+              if( (m_flags & P_DELAYREL)==0 ) writePinDATA(HIGH);
             }
         }
+    }
+  else if( (m_flags & P_DELAYREL)!=0 && (micros()-m_timeoutStart)>m_timeoutDuration )
+    {
+      // we have waited long enough => release DATA now
+      writePinDATA(HIGH);
+      m_flags &= ~P_DELAYREL;
     }
 
   // ------------------ transmitting data -------------------
