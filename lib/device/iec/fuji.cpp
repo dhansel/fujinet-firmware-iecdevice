@@ -30,8 +30,6 @@
 #define FF_DIR 0x01
 #define FF_TRUNC 0x02
 
-#define DEVICE_ERROR -1
-
 iecFuji theFuji; // global fuji device object
 // iecNetwork sioNetDevs[MAX_NETWORK_DEVICES];
 
@@ -88,11 +86,13 @@ static std::string dataToHexString(uint8_t *data, size_t len)
 
 
 // Constructor
-iecFuji::iecFuji() : IECFileDevice()
+iecFuji::iecFuji() : IECDevice()
 {
     // Helpful for debugging
     for (int i = 0; i < MAX_HOSTS; i++)
         _fnHosts[i].slotid = i;
+
+    state = DEVICE_IDLE;
 }
 
 // Initializes base settings and adds our devices to the SIO bus
@@ -156,44 +156,102 @@ void logResponse(const void* data, size_t length)
 
 }
 
-uint8_t iecFuji::getStatusData(char *buffer, uint8_t bufferSize)
-{
-  uint8_t n = 0;
-  Debug_printv("iecFuji::getStatus(#%d)", m_devnr);
-  
-  if (!responseV.empty() && is_raw_command) {
-    // only send raw back for a raw command, thus code can set "response", but we won't send it back as that's BASIC response
-    n = std::min(responseV.size(), (size_t) bufferSize);
-    memcpy(buffer, responseV.data(), n);
-    Debug_printv("RAW response: %s", dataToHexString((uint8_t *) buffer, n).c_str());
-  }
-  else if(!response.empty() && !is_raw_command) {
-    // only send string response back for basic command
-    n = std::min(response.length(), (size_t) (bufferSize-1));
-    memcpy(buffer, response.data(), n);
-    buffer[n] = 0;
-    Debug_printv("BASIC response: %s", buffer);
-  }
-  else {
-    Debug_printv("NO response");
-  }
-  
-  // ensure responses are cleared for next command in case they were set but didn't match the command type (i.e. basic or raw)
-  responseV.clear();
-  response = "";
 
-  return n;
+void iecFuji::talk(uint8_t secondary)
+{
+  // only talk on channel 15
+  if( (secondary & 0x0F)==15 )
+    {
+      state = DEVICE_TALK;
+      responsePtr = 0;
+    }
 }
 
 
-void iecFuji::execute(const char *cmd, uint8_t cmdLen)
+void iecFuji::listen(uint8_t secondary)
 {
-  Debug_printv("iecFuji::execute(#%d)", m_devnr);
+  // only listen on channel 15
+  if( (secondary & 0x0F)==15 )
+    {
+      state = DEVICE_LISTEN;
+      payload.clear();
+    }
+}
 
-  payload = std::string(cmd, cmdLen);
 
+void iecFuji::untalk()
+{
+  state = DEVICE_IDLE;
+}
+
+
+void iecFuji::unlisten()
+{
+  if( state == DEVICE_LISTEN )
+    state = DEVICE_ACTIVE;
+}
+
+
+int8_t iecFuji::canWrite()
+{
+  return state==DEVICE_LISTEN ? 1 : 0;
+}
+
+
+int8_t iecFuji::canRead()
+{
+  if( state == DEVICE_TALK )
+    return std::min((size_t) 2, responseV.size()-responsePtr);
+  else
+    return 0;
+}
+
+
+void iecFuji::write(uint8_t data, bool eoi)
+{
+  payload += char(data);
+}
+
+
+uint8_t iecFuji::read()
+{
+  // we should never get here if responsePtr>=responseV.size() because
+  // then canRead would have returned 0, but better safe than sorry
+  return responsePtr < responseV.size() ? responseV[responsePtr++] : 0;
+}
+
+
+void iecFuji::task()
+{
+  // this gets called whenever the IEC bus is NOT in a time-sensitive state.
+  // Any possibly time-comsuming tasks should be processed within here.
+
+  // first call the underlying class task function
+  IECDevice::task();
+  
+  if( state==DEVICE_ACTIVE )
+    {
+      if( payload.size()>0 ) process_cmd();
+      state = DEVICE_IDLE;
+    }
+}
+
+
+void iecFuji::reset()
+{
+  IECDevice::reset();
+  current_fuji_cmd = -1;
+  last_command = -1;
+  response.clear();
   responseV.clear();
-  response = "";
+  state = DEVICE_IDLE;
+}
+
+
+void iecFuji::process_cmd()
+{
+  responseV.clear();
+  response.clear();
   is_raw_command = false;
   if (current_fuji_cmd == -1) {
     // this is a new command being sent
@@ -205,7 +263,6 @@ void iecFuji::execute(const char *cmd, uint8_t cmdLen)
         Debug_printv("ERROR: Unsupported cmd: x%02x, ignoring\n", payload[1]);
         last_command = payload[1];
         set_fuji_iec_status(DEVICE_ERROR, "Unrecognised command");
-        clearStatus();
         return;
       }
       // Debug_printf("RAW COMMAND - trying immediate action on it\r\n");
@@ -226,19 +283,20 @@ void iecFuji::execute(const char *cmd, uint8_t cmdLen)
     process_raw_cmd_data();
   }
 
-  // make sure getStatus() gets called next time the host requests data on channel 15
-  clearStatus();
+  if (!responseV.empty() && is_raw_command) {
+    // only send raw back for a raw command, thus code can set "response", but we won't send it back as that's BASIC response
+    Debug_printv("RAW response: %s", dataToHexString(responseV.data(), responseV.size()).c_str());
+  }
+  else if(!response.empty() && !is_raw_command) {
+    // only send string response back for basic command
+    Debug_printv("BASIC response: %s", response.c_str());
+    responseV.assign(response.begin(), response.end());
+    response.clear();
+  }
+  else {
+    Debug_printv("NO response");
+  }
 }
-
-
-void iecFuji::reset()
-{
-  IECFileDevice::reset();
-  current_fuji_cmd = -1;
-  last_command = -1;
-  clearStatus();
-}
-
 
 
 // COMMODORE SPECIFIC CONVENIENCE COMMANDS /////////////////////

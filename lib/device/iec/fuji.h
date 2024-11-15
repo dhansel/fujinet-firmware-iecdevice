@@ -84,7 +84,18 @@ typedef struct
     char password[MAX_PASSPHRASE_LEN + 1];
 } net_config_t;
 
-class iecFuji : public IECFileDevice
+typedef enum
+{
+    DEVICE_ERROR = -1,
+    DEVICE_IDLE = 0,      // Ready and waiting
+    DEVICE_ACTIVE = 1,
+    DEVICE_LISTEN = 2,    // A command is recieved and data is coming to us
+    DEVICE_TALK = 3,      // A command is recieved and we must talk now
+    DEVICE_PAUSED = 4,    // Execute device command
+} device_state_t;
+
+
+class iecFuji : public IECDevice
 {
 private:
     systemBus *_bus;
@@ -110,8 +121,10 @@ private:
     std::vector<std::string> pt;
     std::string payloadRaw, payload, response;
     std::vector<uint8_t> responseV;
+    size_t responsePtr;
     bool is_raw_command;
 
+    void process_cmd();
     void process_raw_cmd_data();
     void process_immediate_raw_cmds();
 
@@ -128,20 +141,16 @@ private:
     int last_command = -1;
 
 protected:
-    // called when the bus master reads from channel 15 and the status
-    // buffer is currently empty. this should populate buffer with an appropriate 
-    // status message bufferSize is the maximum allowed length of the message
-    virtual uint8_t getStatusData(char *buffer, uint8_t bufferSize);
-
-    // called when the bus master sends data (i.e. a command) to channel 15
-    // command is a 0-terminated string representing the command to execute
-    // commandLen contains the full length of the received command (useful if
-    // the command itself may contain zeros)
-    virtual void execute(const char *command, uint8_t cmdLen);
-
-    // called on falling edge of RESET line
-    virtual void reset();
-
+    virtual void talk(uint8_t secondary) override;
+    virtual void listen(uint8_t secondary) override;
+    virtual void untalk() override;
+    virtual void unlisten() override;
+    virtual int8_t canWrite() override;
+    virtual int8_t canRead() override;
+    virtual void write(uint8_t data, bool eoi) override;
+    virtual uint8_t read() override;
+    virtual void task() override;
+    virtual void reset() override;
 
     // is the cmd supported by RAW?
     bool is_supported(uint8_t cmd);
@@ -396,6 +405,7 @@ protected:
         int channel;
     } iecStatus;
 
+    device_state_t state;
 
 public:
     bool boot_config = true;
