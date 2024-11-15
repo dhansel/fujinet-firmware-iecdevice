@@ -88,6 +88,8 @@ class iecDrive : public IECFileDevice
   void    setStatusCode(uint8_t code, uint8_t trk = 0);
   bool    hasError();
 
+  fujiHost *m_host;
+
  private:
   // open file "name" on channel
   virtual void open(byte channel, const char *name);
@@ -121,7 +123,6 @@ class iecDrive : public IECFileDevice
 
   void set_cwd(std::string path);
 
-  fujiHost *m_host;
   std::unique_ptr<MFile> m_cwd;   // current working directory
   iecChannelHandler *m_channels[16];
   uint8_t m_statusCode, m_statusTrk, m_numOpenChannels;
