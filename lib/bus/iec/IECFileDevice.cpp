@@ -148,6 +148,16 @@ void IECFileDevice::begin()
 }
 
 
+byte IECFileDevice::getStatusData(char *buffer, byte bufferSize) 
+{ 
+  // call the getStatus() function that returns a null-terminated string
+  m_statusBuffer[0] = 0;
+  getStatus(m_statusBuffer, bufferSize);
+  m_statusBuffer[bufferSize-1] = 0;
+  return strlen(m_statusBuffer);
+}
+
+
 int8_t IECFileDevice::canRead() 
 { 
 #if DEBUG>2
@@ -161,9 +171,8 @@ int8_t IECFileDevice::canRead()
     {
       if( m_statusBufferPtr==m_statusBufferLen )
         {
-          m_statusBuffer[0] = 0;
-          getStatus(m_statusBuffer, IECFILEDEVICE_STATUS_BUFFER_SIZE-1);
-          m_statusBuffer[IECFILEDEVICE_STATUS_BUFFER_SIZE-1] = 0;
+          m_statusBufferPtr = 0;
+          m_statusBufferLen = getStatusData(m_statusBuffer, IECFILEDEVICE_STATUS_BUFFER_SIZE);
 #if DEBUG>0
           Serial.print(F("STATUS")); 
 #if MAX_DEVICES>1
@@ -171,12 +180,9 @@ int8_t IECFileDevice::canRead()
 #endif
           Serial.write(':'); Serial.write(' ');
           Serial.println(m_statusBuffer);
-          for(byte i=0; m_statusBuffer[i]; i++) dbg_data(m_statusBuffer[i]);
+          for(byte i=0; i<m_statusBufferLen; i++) dbg_data(m_statusBuffer[i]);
           dbg_print_data();
 #endif
-
-          m_statusBufferLen = strlen(m_statusBuffer);
-          m_statusBufferPtr = 0;
         }
       
       return m_statusBufferLen-m_statusBufferPtr;

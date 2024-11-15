@@ -54,10 +54,19 @@ class IECFileDevice : public IECDevice
   // (e.g. C64 load command will show "file not found")
   virtual byte read(byte channel, byte *buffer, byte bufferSize) { return 0; }
 
-  // called when the bus master reads from channel 15 and the status
-  // buffer is currently empty. this should populate buffer with an appropriate 
-  // status message bufferSize is the maximum allowed length of the message
+  // called when the bus master reads from channel 15, the status
+  // buffer is currently empty and getStatusData() is not overloaded. 
+  // This should populate buffer with an appropriate status message,
+  // bufferSize is the maximum allowed length of the message
+  // the data in the buffer should be a null-terminated string
   virtual void getStatus(char *buffer, byte bufferSize) { *buffer=0; }
+
+  // called when the bus master reads from channel 15 and the status
+  // buffer is currently empty, this should 
+  // - fill buffer with up to bufferSize bytes of data
+  // - return the number of data bytes stored in the buffer
+  // The default implementation of getStatusData just calls getStatus().
+  virtual byte getStatusData(char *buffer, byte bufferSize);
 
   // called when the bus master sends data (i.e. a command) to channel 15
   // command is a 0-terminated string representing the command to execute
