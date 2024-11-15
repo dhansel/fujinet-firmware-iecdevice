@@ -25,7 +25,7 @@
 #include "IECespidf.h"
 #endif
 
-IECDevice::IECDevice(byte devnr) 
+IECDevice::IECDevice(uint8_t devnr) 
 { 
   m_devnr   = devnr; 
   m_handler = NULL;
@@ -33,7 +33,7 @@ IECDevice::IECDevice(byte devnr)
   device_active = true;
 }
 
-void IECDevice::setDeviceNumber(byte devnr)
+void IECDevice::setDeviceNumber(uint8_t devnr)
 {
   m_devnr = devnr;
 }
@@ -85,9 +85,9 @@ void IECDevice::epyxLoadRequest()
 // default implementation of "buffer read" function which can/should be overridden
 // (for efficiency) by devices using the JiffyDos, Epyx FastLoad or DolphinDos protocol
 #if defined(SUPPORT_JIFFY) || defined(SUPPORT_EPYX) || defined(SUPPORT_DOLPHIN)
-byte IECDevice::read(byte *buffer, byte bufferSize)
+uint8_t IECDevice::read(uint8_t *buffer, uint8_t bufferSize)
 { 
-  byte i;
+  uint8_t i;
   for(i=0; i<bufferSize; i++)
     {
       int8_t n;
@@ -107,9 +107,9 @@ byte IECDevice::read(byte *buffer, byte bufferSize)
 #if defined(SUPPORT_DOLPHIN)
 // default implementation of "buffer write" function which can/should be overridden
 // (for efficiency) by devices using the DolphinDos protocol
-byte IECDevice::write(byte *buffer, byte bufferSize, bool eoi)
+uint8_t IECDevice::write(uint8_t *buffer, uint8_t bufferSize, bool eoi)
 {
-  byte i;
+  uint8_t i;
   for(i=0; i<bufferSize; i++)
     {
       int8_t n;

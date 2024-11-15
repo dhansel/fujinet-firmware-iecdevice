@@ -54,14 +54,14 @@
 #define timer_reset()        TCNT1L=0
 #define timer_start()        TCCR1B |= bit(CS11)
 #define timer_stop()         TCCR1B &= ~bit(CS11)
-#define timer_wait_until(us) while( TCNT1L < ((byte) (2*(us))) )
+#define timer_wait_until(us) while( TCNT1L < ((uint8_t) (2*(us))) )
 #else
 // use 8-bit timer 2 with /8 prescaler
 #define timer_init()         { TCCR2A=0; TCCR2B=0; }
 #define timer_reset()        TCNT2=0
 #define timer_start()        TCCR2B |= bit(CS21)
 #define timer_stop()         TCCR2B &= ~bit(CS21)
-#define timer_wait_until(us) while( TCNT2 < ((byte) (2*(us))) )
+#define timer_wait_until(us) while( TCNT2 < ((uint8_t) (2*(us))) )
 #endif
 
 //NOTE: Must disable SUPPORT_DOLPHIN, otherwise no pins left for debugging (except Mega)
@@ -323,7 +323,7 @@ bool IECBusHandler::waitPinCLK(bool state, uint16_t timeout)
 }
 
 
-IECBusHandler::IECBusHandler(byte pinATN, byte pinCLK, byte pinDATA, byte pinRESET, byte pinCTRL) :
+IECBusHandler::IECBusHandler(uint8_t pinATN, uint8_t pinCLK, uint8_t pinDATA, uint8_t pinRESET, uint8_t pinCTRL) :
 #if defined(SUPPORT_DOLPHIN)
 #if defined(ESP_PLATFORM)
   // ESP32
@@ -424,7 +424,7 @@ void IECBusHandler::begin()
     }
 
   // call begin() function for all attached devices
-  for(byte i=0; i<m_numDevices; i++)
+  for(uint8_t i=0; i<m_numDevices; i++)
     m_devices[i]->begin();
 }
 
@@ -465,7 +465,7 @@ bool IECBusHandler::attachDevice(IECDevice *dev)
 
 bool IECBusHandler::detachDevice(IECDevice *dev)
 {
-  for(byte i=0; i<m_numDevices; i++)
+  for(uint8_t i=0; i<m_numDevices; i++)
     if( dev == m_devices[i] )
       {
         dev->m_handler = NULL;
@@ -481,9 +481,9 @@ bool IECBusHandler::detachDevice(IECDevice *dev)
 }
 
 
-IECDevice *IECBusHandler::findDevice(byte devnr, bool includeInactive)
+IECDevice *IECBusHandler::findDevice(uint8_t devnr, bool includeInactive)
 {
-  for(byte i=0; i<m_numDevices; i++)
+  for(uint8_t i=0; i<m_numDevices; i++)
     if( devnr == m_devices[i]->m_devnr && (includeInactive || m_devices[i]->device_active) )
       return m_devices[i];
 
@@ -506,7 +506,7 @@ void IECBusHandler::atnInterruptFcn2(INTERRUPT_FCN_ARG)
 
 
 #if (defined(SUPPORT_JIFFY) || defined(SUPPORT_DOLPHIN) || defined(SUPPORT_EPYX)) && !defined(IEC_DEFAULT_FASTLOAD_BUFFER_SIZE)
-void IECBusHandler::setBuffer(byte *buffer, byte bufferSize)
+void IECBusHandler::setBuffer(uint8_t *buffer, uint8_t bufferSize)
 {
   m_buffer     = bufferSize>0 ? buffer : NULL;
   m_bufferSize = bufferSize;
@@ -534,7 +534,7 @@ bool IECBusHandler::enableJiffyDosSupport(IECDevice *dev, bool enable)
 
 bool IECBusHandler::receiveJiffyByte(bool canWriteOk)
 {
-  byte data = 0;
+  uint8_t data = 0;
   JDEBUG1();
   timer_init();
   timer_reset();
@@ -628,9 +628,9 @@ bool IECBusHandler::receiveJiffyByte(bool canWriteOk)
 }
 
 
-bool IECBusHandler::transmitJiffyByte(byte numData)
+bool IECBusHandler::transmitJiffyByte(uint8_t numData)
 {
-  byte data = numData>0 ? m_currentDevice->peek() : 0;
+  uint8_t data = numData>0 ? m_currentDevice->peek() : 0;
 
   JDEBUG1();
   timer_init();
@@ -732,7 +732,7 @@ bool IECBusHandler::transmitJiffyByte(byte numData)
 }
 
 
-bool IECBusHandler::transmitJiffyBlock(byte *buffer, byte numBytes)
+bool IECBusHandler::transmitJiffyBlock(uint8_t *buffer, uint8_t numBytes)
 {
   JDEBUG1();
   timer_init();
@@ -771,9 +771,9 @@ bool IECBusHandler::transmitJiffyBlock(byte *buffer, byte numBytes)
 
   noInterrupts();
 
-  for(byte i=0; i<numBytes; i++)
+  for(uint8_t i=0; i<numBytes; i++)
     {
-      byte data = buffer[i];
+      uint8_t data = buffer[i];
 
       // release DATA
       writePinDATA(HIGH);
@@ -873,7 +873,7 @@ static void handshakeIRQ(INTERRUPT_FCN_ARG) { _handshakeReceived = true; }
 #endif
 
 
-void IECBusHandler::setDolphinDosPins(byte pinHT, byte pinHR,byte pinD0, byte pinD1, byte pinD2, byte pinD3, byte pinD4, byte pinD5, byte pinD6, byte pinD7)
+void IECBusHandler::setDolphinDosPins(uint8_t pinHT, uint8_t pinHR,uint8_t pinD0, uint8_t pinD1, uint8_t pinD2, uint8_t pinD3, uint8_t pinD4, uint8_t pinD5, uint8_t pinD6, uint8_t pinD7)
 {
   m_pinDolphinHandshakeTransmit = pinHT;
   m_pinDolphinHandshakeReceive  = pinHR;
@@ -911,7 +911,7 @@ bool IECBusHandler::enableDolphinDosSupport(IECDevice *dev, bool enable)
 }
 
 
-bool IECBusHandler::isDolphinPin(byte pin)
+bool IECBusHandler::isDolphinPin(uint8_t pin)
 {
   if( pin==m_pinDolphinHandshakeTransmit || pin==m_pinDolphinHandshakeReceive )
     return true;
@@ -926,7 +926,7 @@ bool IECBusHandler::isDolphinPin(byte pin)
 
 void IECBusHandler::enableParallelPins()
 {
-  byte i = 0;
+  uint8_t i = 0;
   for(i=0; i<m_numDevices; i++)
     if( m_devices[i]->m_sflags & S_DOLPHIN_ENABLED )
       break;
@@ -938,7 +938,7 @@ void IECBusHandler::enableParallelPins()
 #if defined(IOREG_TYPE)
       m_regDolphinHandshakeTransmitMode = portModeRegister(digitalPinToPort(m_pinDolphinHandshakeTransmit));
       m_bitDolphinHandshakeTransmit     = digitalPinToBitMask(m_pinDolphinHandshakeTransmit);
-      for(byte i=0; i<8; i++)
+      for(uint8_t i=0; i<8; i++)
         {
           m_regDolphinParallelWrite[i] = portOutputRegister(digitalPinToPort(m_pinDolphinParallel[i]));
           m_regDolphinParallelRead[i]  = portInputRegister(digitalPinToPort(m_pinDolphinParallel[i]));
@@ -1061,9 +1061,9 @@ void IECBusHandler::parallelBusHandshakeTransmit()
 }
 
 
-byte IECBusHandler::readParallelData()
+uint8_t IECBusHandler::readParallelData()
 {
-  byte res = 0;
+  uint8_t res = 0;
   // loop unrolled for performance
   if( digitalReadFastExt(m_pinDolphinParallel[0], m_regDolphinParallelRead[0], m_bitDolphinParallel[0]) ) res |= 0x01;
   if( digitalReadFastExt(m_pinDolphinParallel[1], m_regDolphinParallelRead[1], m_bitDolphinParallel[1]) ) res |= 0x02;
@@ -1077,7 +1077,7 @@ byte IECBusHandler::readParallelData()
 }
 
 
-void IECBusHandler::writeParallelData(byte data)
+void IECBusHandler::writeParallelData(uint8_t data)
 {
   // loop unrolled for performance
   digitalWriteFastExt(m_pinDolphinParallel[0], m_regDolphinParallelWrite[0], m_bitDolphinParallel[0], data & 0x01);
@@ -1186,7 +1186,7 @@ bool IECBusHandler::receiveDolphinByte(bool canWriteOk)
   if( canWriteOk )
     {
       // read data from parallel bus
-      byte data = readParallelData();
+      uint8_t data = readParallelData();
 
       // confirm receipt
       writePinDATA(LOW);
@@ -1221,7 +1221,7 @@ bool IECBusHandler::receiveDolphinByte(bool canWriteOk)
 }
 
 
-bool IECBusHandler::transmitDolphinByte(byte numData)
+bool IECBusHandler::transmitDolphinByte(uint8_t numData)
 {
   // Note: receiver starts a 50us timeout after setting DATA high
   // (ready-to-receive) waiting for CLK low (data valid). If we take
@@ -1230,7 +1230,7 @@ bool IECBusHandler::transmitDolphinByte(byte numData)
   // - disable interrupts between setting CLK high and setting CLK low
   // - get the data byte to send before setting CLK high
   // - wait for DATA high in a blocking loop
-  byte data = numData>0 ? m_currentDevice->peek() : 0xFF;
+  uint8_t data = numData>0 ? m_currentDevice->peek() : 0xFF;
 
   noInterrupts();
 
@@ -1285,7 +1285,7 @@ bool IECBusHandler::receiveDolphinBurst()
 {
   // NOTE: we only get here if sender has already signaled ready-to-send
   // by pulling CLK low
-  byte n = 0;
+  uint8_t n = 0;
 
   // clear any previous handshakes
   parallelBusHandshakeReceived();
@@ -1353,7 +1353,7 @@ bool IECBusHandler::transmitDolphinBurst()
   // the transmission has started. The kernal does so after the first two bytes
   // were sent, MultiDubTwo after one byte. After swtiching to burst mode, the 1541
   // then re-transmits the bytes that were already sent.
-  for(byte i=0; i<m_dolphinCtr; i++)
+  for(uint8_t i=0; i<m_dolphinCtr; i++)
     {
       // put data on bus
       writeParallelData(m_buffer[i]);
@@ -1369,9 +1369,9 @@ bool IECBusHandler::transmitDolphinBurst()
     }
 
   // get data from the device and transmit it
-  byte n;
+  uint8_t n;
   while( (n=m_currentDevice->read(m_buffer, m_bufferSize))>0 )
-    for(byte i=0; i<n; i++)
+    for(uint8_t i=0; i<n; i++)
       {
         // put data on bus
         writeParallelData(m_buffer[i]);
@@ -1441,10 +1441,10 @@ void IECBusHandler::epyxLoadRequest(IECDevice *dev)
 }
 
 
-bool IECBusHandler::receiveEpyxByte(byte &data)
+bool IECBusHandler::receiveEpyxByte(uint8_t &data)
 {
   bool clk = HIGH;
-  for(byte i=0; i<8; i++)
+  for(uint8_t i=0; i<8; i++)
     {
       // wait for next bit ready
       // can't use timeout because interrupts are disabled and (on some platforms) the
@@ -1463,7 +1463,7 @@ bool IECBusHandler::receiveEpyxByte(byte &data)
 }
 
 
-bool IECBusHandler::transmitEpyxByte(byte data)
+bool IECBusHandler::transmitEpyxByte(uint8_t data)
 {
   // receiver expects all data bits to be inverted
   data = ~data;
@@ -1540,12 +1540,12 @@ bool IECBusHandler::transmitEpyxByte(byte data)
 // form of the call - timeouts are dealt with using the micros() function
 // which does not work properly when interrupts are disabled.
 
-bool IECBusHandler::startEpyxSectorCommand(byte command)
+bool IECBusHandler::startEpyxSectorCommand(uint8_t command)
 {
   // interrupts are assumed to be disabled when we get here
   // and will be re-enabled before we exit
   // both CLK and DATA must be released (HIGH) before entering
-  byte track, sector, data;
+  uint8_t track, sector, data;
 
   if( command==0x81 )
     {
@@ -1601,9 +1601,9 @@ bool IECBusHandler::startEpyxSectorCommand(byte command)
 bool IECBusHandler::finishEpyxSectorCommand()
 {
   // this was set in receiveEpyxSectorCommand
-  byte command = m_buffer[0];
-  byte track   = m_buffer[1];
-  byte sector  = m_buffer[2];
+  uint8_t command = m_buffer[0];
+  uint8_t track   = m_buffer[1];
+  uint8_t sector  = m_buffer[2];
 
   // receive data from the device
   if( (command&0x7f)!=1 )
@@ -1701,7 +1701,7 @@ bool IECBusHandler::receiveEpyxHeader()
   writePinCLK(HIGH);
 
   // receive fastload routine upload (256 bytes) and compute checksum
-  byte data, checksum = 0;
+  uint8_t data, checksum = 0;
   for(int i=0; i<256; i++)
     {
       if( !receiveEpyxByte(data) ) { interrupts(); return false; }
@@ -1714,11 +1714,11 @@ bool IECBusHandler::receiveEpyxHeader()
     {
       // LOAD FILE operation
       // receive file name and open file
-      byte n;
+      uint8_t n;
       if( receiveEpyxByte(n) && n>0 && n<=32 )
         {
           // file name arrives in reverse order
-          for(byte i=n; i>0; i--)
+          for(uint8_t i=n; i>0; i--)
             if( !receiveEpyxByte(m_buffer[i-1]) )
               { interrupts(); return false; }
 
@@ -1732,7 +1732,7 @@ bool IECBusHandler::receiveEpyxHeader()
           m_currentDevice->listen(0xF0);
 
           // send file name (in proper order) to the device
-          for(byte i=0; i<n; i++)
+          for(uint8_t i=0; i<n; i++)
             {
               // make sure the device can accept data
               int8_t ok;
@@ -1778,7 +1778,7 @@ bool IECBusHandler::receiveEpyxHeader()
 
 bool IECBusHandler::transmitEpyxBlock()
 {
-  byte n = m_currentDevice->read(m_buffer, m_bufferSize);
+  uint8_t n = m_currentDevice->read(m_buffer, m_bufferSize);
 
   noInterrupts();
 
@@ -1789,7 +1789,7 @@ bool IECBusHandler::transmitEpyxBlock()
   if( !transmitEpyxByte(n) ) { interrupts(); return false; }
 
   // transmit the data block
-  for(byte i=0; i<n; i++)
+  for(uint8_t i=0; i<n; i++)
     if( !transmitEpyxByte(m_buffer[i]) )
       { interrupts(); return false; }
 
@@ -1843,8 +1843,8 @@ bool IECBusHandler::receiveIECByte(bool canWriteOk)
       if( !waitPinCLK(LOW) ) { interrupts(); return false; }
     }
 
-  byte data = 0;
-  for(byte i=0; i<8; i++)
+  uint8_t data = 0;
+  for(uint8_t i=0; i<8; i++)
     {
       // wait for CLK=1, signaling data is ready
       JDEBUG1();
@@ -1957,7 +1957,7 @@ bool IECBusHandler::receiveIECByte(bool canWriteOk)
 }
 
 
-bool IECBusHandler::transmitIECByte(byte numData)
+bool IECBusHandler::transmitIECByte(uint8_t numData)
 {
   // check whether ready-to-receive was already signaled by the 
   // receiver before we signaled ready-to-send. The 1541 ROM 
@@ -1997,10 +1997,10 @@ bool IECBusHandler::transmitIECByte(byte numData)
   writePinCLK(LOW);
 
   // get the data byte from the device
-  byte data = m_currentDevice->read();
+  uint8_t data = m_currentDevice->read();
 
   // transmit the byte
-  for(byte i=0; i<8; i++)
+  for(uint8_t i=0; i<8; i++)
     {
       // signal "data not valid" (CLK=0)
       writePinCLK(LOW);
@@ -2057,15 +2057,15 @@ void IECBusHandler::atnRequest()
   writePinCTRL(HIGH);
 
 #ifdef SUPPORT_JIFFY
-  for(byte i=0; i<m_numDevices; i++)
+  for(uint8_t i=0; i<m_numDevices; i++)
     m_devices[i]->m_sflags &= ~(S_JIFFY_DETECTED|S_JIFFY_BLOCK);
 #endif
 #ifdef SUPPORT_DOLPHIN
-  for(byte i=0; i<m_numDevices; i++) 
+  for(uint8_t i=0; i<m_numDevices; i++) 
     m_devices[i]->m_sflags &= ~(S_DOLPHIN_BURST_TRANSMIT|S_DOLPHIN_BURST_RECEIVE|S_DOLPHIN_DETECTED);
 #endif
 #ifdef SUPPORT_EPYX
-  for(byte i=0; i<m_numDevices; i++) 
+  for(uint8_t i=0; i<m_numDevices; i++) 
     m_devices[i]->m_sflags &= ~(S_EPYX_HEADER|S_EPYX_LOAD|S_EPYX_SECTOROP);
 #endif
 }
@@ -2094,7 +2094,7 @@ void IECBusHandler::task()
       writePinCTRL(LOW);
 
       // call "reset" function for attached devices
-      for(byte i=0; i<m_numDevices; i++)
+      for(uint8_t i=0; i<m_numDevices; i++)
         m_devices[i]->reset(); 
     }
 
@@ -2160,14 +2160,14 @@ void IECBusHandler::task()
         {
           // all devices were told to stop listening
           m_flags &= ~P_LISTENING;
-          for(byte i=0; i<m_numDevices; i++)
+          for(uint8_t i=0; i<m_numDevices; i++)
             m_devices[i]->unlisten();
         }
       else if( m_primary == 0x5f && (m_flags & P_TALKING) )
         {
           // all devices were told to stop talking
           m_flags &= ~P_TALKING;
-          for(byte i=0; i<m_numDevices; i++)
+          for(uint8_t i=0; i<m_numDevices; i++)
             m_devices[i]->untalk();
         }
 
@@ -2183,7 +2183,7 @@ void IECBusHandler::task()
 #ifdef SUPPORT_DOLPHIN
   // ------------------ DolphinDos burst transfer handling -------------------
 
-  for(byte devidx=0; devidx<m_numDevices; devidx++)
+  for(uint8_t devidx=0; devidx<m_numDevices; devidx++)
   if( (m_devices[devidx]->m_sflags & S_DOLPHIN_BURST_TRANSMIT)!=0 && (micros()-m_timeoutStart)>200 && !readPinDATA() )
     {
       // if we are in burst transmit mode, give other devices 200us to release
@@ -2251,7 +2251,7 @@ void IECBusHandler::task()
 #ifdef SUPPORT_EPYX
   // ------------------ Epyx FastLoad transfer handling -------------------
 
-  for(byte devidx=0; devidx<m_numDevices; devidx++)
+  for(uint8_t devidx=0; devidx<m_numDevices; devidx++)
   if( (m_devices[devidx]->m_sflags & S_EPYX_HEADER) && readPinDATA() )
     {
       m_currentDevice = m_devices[devidx];
@@ -2384,7 +2384,7 @@ void IECBusHandler::task()
      if( (m_currentDevice->m_sflags & S_JIFFY_BLOCK)!=0 )
        {
          // JiffyDOS block transfer mode
-         byte numData = m_currentDevice->read(m_buffer, m_bufferSize);
+         uint8_t numData = m_currentDevice->read(m_buffer, m_bufferSize);
 
          // delay to make sure receiver sees our CLK LOW and enters "new data block" state.
          // due possible VIC "bad line" it may take receiver up to 120us after
@@ -2470,6 +2470,6 @@ void IECBusHandler::task()
   if( m_atnInterrupt!=NOT_AN_INTERRUPT && !readPinATN() && !(m_flags & P_ATN) ) { noInterrupts(); atnRequest(); interrupts(); }
 
   // call "task" function for attached devices
-  for(byte i=0; i<m_numDevices; i++)
+  for(uint8_t i=0; i<m_numDevices; i++)
     m_devices[i]->task(); 
 }

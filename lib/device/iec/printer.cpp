@@ -126,7 +126,7 @@ iecPrinter::printer_type iecPrinter::match_modelname(std::string model_name)
 }
 
 
-void iecPrinter::listen(byte channel)
+void iecPrinter::listen(uint8_t channel)
 {
   _channel = channel;
 }
@@ -138,7 +138,7 @@ int8_t iecPrinter::canWrite()
 }
 
 
-void iecPrinter::write(byte data, bool eoi)
+void iecPrinter::write(uint8_t data, bool eoi)
 {
   _pptr->provideBuffer()[0] = data;
   _pptr->process(1, _channel, 0);

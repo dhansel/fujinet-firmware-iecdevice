@@ -156,9 +156,9 @@ void logResponse(const void* data, size_t length)
 
 }
 
-byte iecFuji::getStatusData(char *buffer, byte bufferSize)
+uint8_t iecFuji::getStatusData(char *buffer, uint8_t bufferSize)
 {
-  byte n = 0;
+  uint8_t n = 0;
   Debug_printv("iecFuji::getStatus(#%d)", m_devnr);
   
   if (!responseV.empty() && is_raw_command) {
@@ -186,7 +186,7 @@ byte iecFuji::getStatusData(char *buffer, byte bufferSize)
 }
 
 
-void iecFuji::execute(const char *cmd, byte cmdLen)
+void iecFuji::execute(const char *cmd, uint8_t cmdLen)
 {
   Debug_printv("iecFuji::execute(#%d)", m_devnr);
 
@@ -197,7 +197,7 @@ void iecFuji::execute(const char *cmd, byte cmdLen)
   is_raw_command = false;
   if (current_fuji_cmd == -1) {
     // this is a new command being sent
-    is_raw_command = (payload.size() == 2 && payload[0] == 0x01); // marker byte
+    is_raw_command = (payload.size() == 2 && payload[0] == 0x01); // marker uint8_t
     if (is_raw_command) {
       Debug_printv("RAW command: %s", dataToHexString((uint8_t *) payload.data(), payload.size()).c_str());
       
@@ -2448,7 +2448,7 @@ void iecFuji::hash_output_raw()
 {
     if (payload.size() != 1) {
         std::string msg = "Input should be 1 byte, got " + std::to_string(payload.size());
-        set_fuji_iec_status(DEVICE_ERROR, "Input should be 1 byte.");
+        set_fuji_iec_status(DEVICE_ERROR, "Input should be 1 uint8_t.");
         return;
     }
     responseV = hash_output(payload[0] == 1);

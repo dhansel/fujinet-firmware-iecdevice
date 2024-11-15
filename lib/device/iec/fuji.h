@@ -131,13 +131,13 @@ protected:
     // called when the bus master reads from channel 15 and the status
     // buffer is currently empty. this should populate buffer with an appropriate 
     // status message bufferSize is the maximum allowed length of the message
-    virtual byte getStatusData(char *buffer, byte bufferSize);
+    virtual uint8_t getStatusData(char *buffer, uint8_t bufferSize);
 
     // called when the bus master sends data (i.e. a command) to channel 15
     // command is a 0-terminated string representing the command to execute
     // commandLen contains the full length of the received command (useful if
     // the command itself may contain zeros)
-    virtual void execute(const char *command, byte cmdLen);
+    virtual void execute(const char *command, uint8_t cmdLen);
 
     // called on falling edge of RESET line
     virtual void reset();

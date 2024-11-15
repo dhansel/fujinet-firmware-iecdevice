@@ -45,7 +45,7 @@ static bool isMatch(std::string name, std::string pattern)
 {
   signed char found = -1;
   
-  for(byte i=0; found<0; i++)
+  for(uint8_t i=0; found<0; i++)
     {
       if( pattern[i]=='*' )
         found = 1;
@@ -77,7 +77,7 @@ iecChannelHandler::~iecChannelHandler()
 }
 
 
-byte iecChannelHandler::read(byte *data, byte n)
+uint8_t iecChannelHandler::read(uint8_t *data, uint8_t n)
 {
   // if buffer is empty then re-fill it
   if( m_ptr >= m_len )
@@ -116,7 +116,7 @@ byte iecChannelHandler::read(byte *data, byte n)
 }
 
 
-byte iecChannelHandler::write(byte *data, byte n)
+uint8_t iecChannelHandler::write(uint8_t *data, uint8_t n)
 {
   // if buffer is full then empty it
   if( m_len+n > BUFFER_SIZE )
@@ -416,7 +416,7 @@ iecDrive::~iecDrive()
 }
 
 
-void iecDrive::open(byte channel, const char *cname)
+void iecDrive::open(uint8_t channel, const char *cname)
 {
   Debug_printv("iecDrive::open(#%d, %d, \"%s\")", m_devnr, channel, cname);
   
@@ -562,7 +562,7 @@ void iecDrive::open(byte channel, const char *cname)
 }
 
 
-void iecDrive::close(byte channel)
+void iecDrive::close(uint8_t channel)
 {
   Debug_printv("iecDrive::close(#%d, %d)", m_devnr, channel);
 
@@ -576,7 +576,7 @@ void iecDrive::close(byte channel)
 }
 
 
-byte iecDrive::write(byte channel, byte *data, byte dataLen) 
+uint8_t iecDrive::write(uint8_t channel, uint8_t *data, uint8_t dataLen) 
 {
   iecChannelHandler *handler = m_channels[channel];
   if( handler==nullptr )
@@ -589,7 +589,7 @@ byte iecDrive::write(byte channel, byte *data, byte dataLen)
 }
 
  
-byte iecDrive::read(byte channel, byte *data, byte maxDataLen)
+uint8_t iecDrive::read(uint8_t channel, uint8_t *data, uint8_t maxDataLen)
 { 
   iecChannelHandler *handler = m_channels[channel];
   if( handler==nullptr )
@@ -602,7 +602,7 @@ byte iecDrive::read(byte channel, byte *data, byte maxDataLen)
 }
 
 
-void iecDrive::execute(const char *cmd, byte cmdLen)
+void iecDrive::execute(const char *cmd, uint8_t cmdLen)
 {
   Debug_printv("iecDrive::execute(#%d, \"%s\", %d)", m_devnr, cmd, cmdLen);
 
@@ -611,7 +611,7 @@ void iecDrive::execute(const char *cmd, byte cmdLen)
   if( mstr::startsWith(command, "S:") )
     {
       // SCRATCH (delete)
-      byte n = 0;
+      uint8_t n = 0;
       command = command.substr(2);
 
       MFile *dir = MFSOwner::File(m_cwd->url);
@@ -678,7 +678,7 @@ bool iecDrive::hasError()
 }
 
 
-void iecDrive::getStatus(char *buffer, byte bufferSize)
+void iecDrive::getStatus(char *buffer, uint8_t bufferSize)
 {
   Debug_printv("iecDrive::getStatus(#%d)", m_devnr);
 

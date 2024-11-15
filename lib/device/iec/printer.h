@@ -93,19 +93,19 @@ private:
   // canWrite() should return:
   //  <0 if more time is needed before data can be accepted (call again later), blocks IEC bus
   //   0 if no data can be accepted (error)
-  //  >0 if at least one byte of data can be accepted
+  //  >0 if at least one uint8_t of data can be accepted
   virtual int8_t canWrite();
     
   // called when the device received data
   // write() will only be called if the last call to canWrite() returned >0
   // write() must return within 1 millisecond
   // the "eoi" parameter will be "true" if sender signaled that this is the last 
-  // data byte of a transmission
-  virtual void write(byte data, bool eoi);
+  // data uint8_t of a transmission
+  virtual void write(uint8_t data, bool eoi);
 
   // called when bus master sends LISTEN command
   // listen() must return within 1 millisecond
-  virtual void listen(byte channel);
+  virtual void listen(uint8_t channel);
 
   uint8_t _channel;
   printer_type _ptype;
