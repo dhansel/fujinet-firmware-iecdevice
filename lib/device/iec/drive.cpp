@@ -508,7 +508,7 @@ void iecDrive::open(uint8_t channel, const char *cname)
               Debug_printv("Error: file doesn't exist [%s]", f->url.c_str());
               setStatusCode(ST_FILE_NOT_FOUND);
             }
-          else if( (mode == std::ios_base::in) && f->size()==0 )
+          else if( (mode == std::ios_base::in) && f->size()==0 && !f->isDirectory() )
             {
               Debug_printv("Error: file length is zero [%s]", f->url.c_str());
               setStatusCode(ST_FILE_NOT_FOUND);
