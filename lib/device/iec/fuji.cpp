@@ -119,7 +119,9 @@ void iecFuji::setup(systemBus *bus)
         bus->attachDevice(&_fnDisks[i].disk_dev);
     }
 
-    //Serial.print("Network "); bus->addDevice(new iecNetwork(), 16);     // 16-19 Network Devices
+    // 16-19 Network Devices
+    bus->attachDevice(new iecNetwork(16));     // 16-19 Network Devices
+
     //Serial.print("CPM "); bus->addDevice(new iecCpm(), 20);             // 20-29 Other
     //Serial.print("Clock "); bus->addDevice(new iecClock(), 29);
 
