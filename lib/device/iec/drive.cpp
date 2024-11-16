@@ -196,13 +196,14 @@ uint8_t iecChannelHandlerFile::readBufferData()
     {
       Debug_printv("size[%d] avail[%d] pos[%d]", m_stream->size(), m_stream->available(), m_stream->position());
 
-      if( m_fixLoadAddress>=0 && m_stream->position()==0 && m_stream->available()>=2 )
+      if( m_fixLoadAddress>=0 && m_stream->position()==0 )
         {
-          m_data[0] = (m_fixLoadAddress & 0x00FF);
-          m_data[1] = (m_fixLoadAddress & 0xFF00) >> 8;
-          m_len  = 2;
-          m_stream->position(2);
-          m_len += m_stream->read(m_data+2, BUFFER_SIZE-2);
+          m_len = m_stream->read(m_data, BUFFER_SIZE);
+          if( m_len>=2 )
+            {
+              m_data[0] = (m_fixLoadAddress & 0x00FF);
+              m_data[1] = (m_fixLoadAddress & 0xFF00) >> 8;
+            }
           m_fixLoadAddress = -1;
         }
       else
