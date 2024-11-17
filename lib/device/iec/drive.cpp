@@ -737,7 +737,6 @@ void iecDrive::set_cwd(std::string path)
     auto n = m_cwd->cd( path );
     if( n != nullptr )
       {
-        Debug_printv("isdir[%i] stream[%p]", n->isDirectory(), n->getSourceStream() );
         if( n->exists() && (n->isDirectory() || n->getSourceStream()!=nullptr) )
           {
             m_cwd.reset( n );
