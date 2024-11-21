@@ -55,9 +55,6 @@ class IECDevice
   bool enableEpyxFastLoadSupport(bool enable);
 #endif
 
-  // used by fujinet
-  bool device_active;
-
  protected:
   // called when IECBusHandler::begin() is called
   virtual void begin() {}
@@ -174,7 +171,14 @@ class IECDevice
   void epyxLoadRequest();
 #endif
 
+  // this can be overloaded by derived classes
+  virtual bool isActive() { return m_isActive; }
+
+  // if isActive() is not overloaded then use this to activate/deactivate a device
+  void setActive(bool b) { m_isActive = b; }
+
  protected:
+  bool       m_isActive;
   uint8_t    m_devnr;
   uint16_t m_sflags;
   IECBusHandler *m_handler;

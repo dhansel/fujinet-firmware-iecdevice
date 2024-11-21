@@ -90,6 +90,11 @@ class iecDrive : public IECFileDevice
 
   fujiHost *m_host;
 
+  // overriding the IECDevice isActive() function because device_active
+  // must be a global variable
+  bool device_active = true;
+  virtual bool isActive() { return device_active; }
+
  private:
   // open file "name" on channel
   virtual void open(uint8_t channel, const char *name);

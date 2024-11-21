@@ -500,7 +500,7 @@ bool IECBusHandler::detachDevice(IECDevice *dev)
 IECDevice *IECBusHandler::findDevice(uint8_t devnr, bool includeInactive)
 {
   for(uint8_t i=0; i<m_numDevices; i++)
-    if( devnr == m_devices[i]->m_devnr && (includeInactive || m_devices[i]->device_active) )
+    if( devnr == m_devices[i]->m_devnr && (includeInactive || m_devices[i]->isActive()) )
       return m_devices[i];
 
   return NULL;

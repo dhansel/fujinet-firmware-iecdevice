@@ -433,6 +433,11 @@ public:
     // 0xD7 - why is this public?
     void mount_all();
 
+    // overriding the IECDevice isActive() function because device_active
+    // must be a global variable
+    bool device_active = true;
+    virtual bool isActive() { return device_active; }
+
     iecFuji();
 };
 

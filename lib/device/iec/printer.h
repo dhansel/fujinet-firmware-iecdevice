@@ -85,6 +85,10 @@ public:
 
     printer_emu *getPrinterPtr() { return _pptr; };
 
+    // overriding the IECDevice isActive() function because device_active
+    // must be a global variable
+    bool device_active = true;
+    virtual bool isActive() { return device_active; }
 
 private:
   // called before a write() call to determine whether the device
