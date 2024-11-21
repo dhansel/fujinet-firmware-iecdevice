@@ -52,7 +52,7 @@ typedef void (*interruptFcn)(void *);
 
 #define noInterrupts() portDISABLE_INTERRUPTS()
 #define interrupts()   portENABLE_INTERRUPTS()
-#define micros() esp_timer_get_time()
+#define micros() ((uint32_t) esp_timer_get_time())
 #define PSTR(x) x
 #define strncmp_P strncmp
 #define strcmp_P  strcmp
