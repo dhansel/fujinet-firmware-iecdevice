@@ -548,6 +548,13 @@ bool IECBusHandler::enableJiffyDosSupport(IECDevice *dev, bool enable)
 }
 
 
+#ifdef ESP_PLATFORM
+// if we don't optimize on ESP, we get code that uses MEMW instructions 
+// (which can delay execution) within the timing-sensitive transmission code
+#pragma GCC push_options
+#pragma GCC optimize ("O2")
+#endif
+
 bool IECBusHandler::receiveJiffyByte(bool canWriteOk)
 {
   uint8_t data = 0;
@@ -873,6 +880,10 @@ bool IECBusHandler::transmitJiffyBlock(uint8_t *buffer, uint8_t numBytes)
 
   return true;
 }
+
+#ifdef ESP_PLATFORM
+#pragma GCC pop_options
+#endif
 
 #endif // !SUPPORT_JIFFY
 
@@ -1480,6 +1491,13 @@ bool IECBusHandler::receiveEpyxByte(uint8_t &data)
 }
 
 
+#ifdef ESP_PLATFORM
+// if we don't optimize on ESP, we get code that uses MEMW instructions 
+// (which can delay execution) within the timing-sensitive transmission code
+#pragma GCC push_options
+#pragma GCC optimize ("O2")
+#endif
+
 bool IECBusHandler::transmitEpyxByte(uint8_t data)
 {
   // receiver expects all data bits to be inverted
@@ -1548,6 +1566,10 @@ bool IECBusHandler::transmitEpyxByte(uint8_t data)
   JDEBUG0();
   return true;
 }
+
+#ifdef ESP_PLATFORM
+#pragma GCC pop_options
+#endif
 
 
 #ifdef SUPPORT_EPYX_SECTOROPS
