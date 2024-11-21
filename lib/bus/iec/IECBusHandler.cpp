@@ -41,7 +41,7 @@
 #error "Maximum allowed number of devices is 30"
 #endif
 
-#define JDEBUG
+//#define JDEBUG
 
 // ---------------- Arduino 8-bit ATMega (UNO R3/Mega/Mini/Micro/Leonardo...)
 
@@ -167,8 +167,13 @@ static unsigned long timer_start_us;
 #define pinModeFastExt(pin, reg, bit, dir)    gpio_set_dir(pin, (dir)==OUTPUT)
 #define digitalReadFastExt(pin, reg, bit)     gpio_get(pin)
 #define digitalWriteFastExt(pin, reg, bit, v) gpio_put(pin, v)
-#elif defined(__AVR__) || defined(ARDUINO_UNOR4) || defined(ESP_PLATFORM)
-// Arduino 8-bit (Uno R3/Mega/...) or ESP32
+#elif defined(__AVR__) || defined(ARDUINO_UNOR4)
+// Arduino 8-bit (Uno R3/Mega/...)
+#define pinModeFastExt(pin, reg, bit, dir)    { if( (dir)==OUTPUT ) *(reg)|=(bit); else *(reg)&=~(bit); }
+#define digitalReadFastExt(pin, reg, bit)     (*(reg) & (bit))
+#define digitalWriteFastExt(pin, reg, bit, v) { if( v ) *(reg)|=(bit); else (*reg)&=~(bit); }
+#elif defined(ESP_PLATFORM)
+// ESP32
 #define pinModeFastExt(pin, reg, bit, dir)    { if( (dir)==OUTPUT ) *(reg)|=(bit); else *(reg)&=~(bit); }
 #define digitalReadFastExt(pin, reg, bit)     (*(reg) & (bit))
 #define digitalWriteFastExt(pin, reg, bit, v) { if( v ) *(reg)|=(bit); else (*reg)&=~(bit); }
@@ -179,6 +184,18 @@ static unsigned long timer_start_us;
 #define digitalWriteFastExt(pin, reg, bit, v) digitalWrite(pin, v)
 #endif
 
+// delayMicroseconds on some platforms does not work if called when interrupts are disabled
+// => define a version that does work on all supported platforms
+static void delayMicrosecondsISafe(uint16_t t)
+{
+  timer_init();
+  timer_start();
+  while( t>125 ) { timer_wait_until(125); timer_reset(); t -= 125; }
+  timer_wait_until(t);
+  timer_stop();
+}
+
+
 // -----------------------------------------------------------------------------------------
 
 #define P_ATN        0x80
@@ -186,7 +203,6 @@ static unsigned long timer_start_us;
 #define P_TALKING    0x20
 #define P_DONE       0x10
 #define P_RESET      0x08
-#define P_DELAYREL   0x04
 
 #define S_JIFFY_ENABLED          0x0001  // JiffyDos support is enabled
 #define S_JIFFY_DETECTED         0x0002  // Detected JiffyDos request from host
@@ -766,8 +782,8 @@ bool IECBusHandler::transmitJiffyBlock(uint8_t *buffer, uint8_t numBytes)
   writePinCLK(HIGH);
 
   // delay to make sure receiver has seen DATA=LOW - even though receiver 
-  // is in a tight loop (at FB0C), a VIC "bad line" may steal 40us.
-  if( !waitTimeout(50) ) return false;
+  // is in a tight loop (at FB0C), a VIC "bad line" may steal 40-50us.
+  if( !waitTimeout(60) ) return false;
 
   noInterrupts();
 
@@ -788,7 +804,7 @@ bool IECBusHandler::transmitJiffyBlock(uint8_t *buffer, uint8_t numBytes)
       // make sure DATA has settled on HIGH
       // (receiver takes at least 19 cycles between seeing DATA HIGH [at FB3E] and setting DATA LOW [at FB51]
       // so waiting a couple microseconds will not hurt transfer performance)
-      delayMicroseconds(2);
+      delayMicrosecondsISafe(2);
 
       // wait (indefinitely) for either DATA low (FB51) or ATN low
       // NOTE: this must be in a blocking loop since the receiver receives the data
@@ -870,6 +886,7 @@ bool IECBusHandler::transmitJiffyBlock(uint8_t *buffer, uint8_t numBytes)
 #if !defined(__AVR_ATmega328P__) && !defined(__AVR_ATmega2560__)
 volatile static bool _handshakeReceived = false;
 static void handshakeIRQ(INTERRUPT_FCN_ARG) { _handshakeReceived = true; }
+#define DOLPHIN_NEEDS_INTERRUPTS
 #endif
 
 
@@ -1810,6 +1827,98 @@ bool IECBusHandler::transmitEpyxBlock()
 // ------------------------------------  IEC protocol support routines  ------------------------------------  
 
 
+bool IECBusHandler::receiveIECByteATN(uint8_t &data)
+{
+  // wait for CLK=1
+  if( !waitPinCLK(HIGH, 0) ) return false;
+
+  // release DATA ("ready-for-data")
+  writePinDATA(HIGH);
+
+  // wait for CLK=0
+  if( !waitPinCLK(LOW) ) return false;
+
+  // receive data bits
+  data = 0;
+  for(uint8_t i=0; i<8; i++)
+    {
+      // wait for CLK=1, signaling data is ready
+      JDEBUG1();
+
+#ifdef SUPPORT_JIFFY
+      // JiffyDos protocol detection
+      if( (i==7) && (&data==&m_primary) && !waitPinCLK(HIGH, 200) )
+        {
+          IECDevice *dev = findDevice((data>>1)&0x1F);
+          JDEBUG0();
+          if( (dev!=NULL) && (dev->m_sflags&S_JIFFY_ENABLED) )
+            {
+              JDEBUG1();
+              // when sending final bit of primary address byte under ATN, host
+              // delayed CLK=1 by more than 200us => JiffyDOS protocol detection
+              // => if JiffyDOS support is enabled and we are being addressed then
+              // respond that we support the protocol by pulling DATA low for 80us
+              dev->m_sflags |= S_JIFFY_DETECTED;
+              writePinDATA(LOW);
+              if( !waitTimeout(80) ) return false;
+              writePinDATA(HIGH);
+            }
+        }
+#endif
+
+      if( !waitPinCLK(HIGH) ) return false;
+      JDEBUG0();
+
+      // read DATA bit
+      data >>= 1;
+      if( readPinDATA() ) data |= 0x80;
+
+      // wait for CLK=0, signaling "data not ready"
+      if( !waitPinCLK(LOW) ) return false;
+    }
+
+  // Acknowledge receipt by pulling DATA low
+  writePinDATA(LOW);
+
+#if defined(SUPPORT_DOLPHIN)
+  // DolphinDos parallel cable detection:
+  // after receiving secondary address, wait for either:
+  //  HIGH->LOW edge (1us pulse) on incoming parallel handshake signal, 
+  //      if received pull outgoing parallel handshake signal LOW to confirm
+  //  LOW->HIGH edge on ATN, 
+  //      if so then timeout, host does not support DolphinDos
+
+#ifdef DOLPHIN_NEEDS_INTERRUPTS
+  // this is unfortunate: we need interrupts to detect the falling edge on
+  // the handshake line but other interrupts (esp on ESP32) may cause us to
+  // miss ATN edges if enabled at this point. TODO => find a better way to handle this
+  interrupts();
+#endif
+  IECDevice *dev = findDevice(m_primary & 0x1F);
+  if( dev!=NULL && (dev->m_sflags & S_DOLPHIN_ENABLED) && (&data==&m_secondary) )
+    {
+      // clear any previous handshakes
+      parallelBusHandshakeReceived();
+          
+      // wait for handshake
+      while( !readPinATN() )
+        if( parallelBusHandshakeReceived() )
+          {
+            JDEBUG1();
+            dev->m_sflags |= S_DOLPHIN_DETECTED;
+            parallelBusHandshakeTransmit(); 
+            break;
+          }
+    }
+#ifdef DOLPHIN_NEEDS_INTERRUPTS
+  noInterrupts();
+#endif
+#endif
+
+  return true;
+}
+
+
 bool IECBusHandler::receiveIECByte(bool canWriteOk)
 {
   // NOTE: we only get here if sender has already signaled ready-to-send
@@ -1821,15 +1930,11 @@ bool IECBusHandler::receiveIECByte(bool canWriteOk)
   // release DATA ("ready-for-data")
   writePinDATA(HIGH);
 
-  // if we are under attention then wait until all other devices have also
-  // released DATA, otherwise we may incorrectly detect EOI
-  if( (m_flags & P_ATN)!=0 && !waitPinDATA(HIGH) ) { interrupts(); return false; }
-
   // wait for sender to set CLK=0 ("ready-to-send")
   if( !waitPinCLK(LOW, 200) )
     {
       // exit if waitPinCLK returned because of falling edge on ATN
-      if( (m_flags & P_ATN)==0 && !readPinATN() ) { interrupts(); return false; }
+      if( !readPinATN() ) { interrupts(); return false; }
 
       // sender did not set CLK=0 within 200us after we set DATA=1
       // => it is signaling EOI (not so if we are under ATN)
@@ -1843,38 +1948,12 @@ bool IECBusHandler::receiveIECByte(bool canWriteOk)
       if( !waitPinCLK(LOW) ) { interrupts(); return false; }
     }
 
+  // receive data bits
   uint8_t data = 0;
   for(uint8_t i=0; i<8; i++)
     {
       // wait for CLK=1, signaling data is ready
-      JDEBUG1();
-#ifdef SUPPORT_JIFFY
-      if( !waitPinCLK(HIGH, 200) )
-        {
-          IECDevice *dev = findDevice((data>>1)&0x1F);
-          JDEBUG0();
-          if( (m_flags & P_ATN)==0 && !readPinATN() )
-            { interrupts(); return false; }
-          else if( (m_flags & P_ATN) && (m_primary==0) && (i==7) && (dev!=NULL) && (dev->m_sflags&S_JIFFY_ENABLED) )
-            {
-              JDEBUG1();
-              // when sending final bit of primary address byte under ATN, host
-              // delayed CLK=1 by more than 200us => JiffyDOS protocol detection
-              // => if JiffyDOS support is enabled and we are being addressed then
-              // respond that we support the protocol by pulling DATA low for 80us
-              dev->m_sflags |= S_JIFFY_DETECTED;
-              writePinDATA(LOW);
-              if( !waitTimeout(80) ) { interrupts(); return false; }
-              writePinDATA(HIGH);
-            }
-          
-          // keep waiting fom CLK=1
-          if( !waitPinCLK(HIGH) ) { interrupts(); return false; }
-        }
-#else
       if( !waitPinCLK(HIGH) ) { interrupts(); return false; }
-#endif
-      JDEBUG0();
 
       // read DATA bit
       data >>= 1;
@@ -1886,61 +1965,7 @@ bool IECBusHandler::receiveIECByte(bool canWriteOk)
 
   interrupts();
 
-  if( m_flags & P_ATN )
-    {
-      // Acknowledge receipt by pulling DATA low
-      writePinDATA(LOW);
-
-      // We are currently receiving under ATN.  Store first two 
-      // bytes received(contain primary and secondary address)
-      if( m_primary == 0 )
-        m_primary = data;
-      else if( m_secondary == 0 )
-        m_secondary = data;
-
-      if( (m_primary != 0x3f) && (m_primary != 0x5f) && findDevice((unsigned int) m_primary & 0x1f)==NULL )
-        {
-          // This is NOT an UNLISTEN (0x3f) or UNTALK (0x5f)
-          // command and the primary address is not ours => stop listening,
-          // but give the host some time to see our frame acknowledgement
-          // before releasing DATA
-          m_flags |= P_DELAYREL;
-          m_timeoutStart    = micros();
-          m_timeoutDuration = 150;
-          return false;
-        }
-      else
-        {
-          // Acknowledge receipt by pulling DATA low
-          writePinDATA(LOW);
-
-#if defined(SUPPORT_DOLPHIN)
-          // DolphinDos parallel cable detection:
-          // wait for either:
-          //  HIGH->LOW edge (1us pulse) on incoming parallel handshake signal, 
-          //      if received pull outgoing parallel handshake signal LOW to confirm
-          //  LOW->HIGH edge on ATN, 
-          //      if so then timeout, host does not support DolphinDos
-          IECDevice *dev = findDevice(m_primary & 0x1F);
-          if( dev!=NULL && (dev->m_sflags & S_DOLPHIN_ENABLED) && m_secondary!=0 )
-            {
-              // clear any previous handshakes
-              parallelBusHandshakeReceived();
-
-              // wait for handshake
-              while( !readPinATN() )
-                if( parallelBusHandshakeReceived() )
-                  {
-                    dev->m_sflags |= S_DOLPHIN_DETECTED;
-                    parallelBusHandshakeTransmit(); 
-                    break;
-                  }
-            }
-#endif
-          return true;
-        }
-    }
-  else if( canWriteOk )
+  if( canWriteOk )
     {
       // acknowledge receipt by pulling DATA low
       writePinDATA(LOW);
@@ -1968,6 +1993,8 @@ bool IECBusHandler::transmitIECByte(uint8_t numData)
   // programs (e.g. "copy 190") lock up if we don't handle this case.
   bool verifyError = readPinDATA();
 
+  noInterrupts();
+
   // signal "ready-to-send" (CLK=1)
   writePinCLK(HIGH);
   
@@ -1976,7 +2003,7 @@ bool IECBusHandler::transmitIECByte(uint8_t numData)
   // up the EOI timeout immediately after setting DATA HIGH. If we had exited the 
   // "task" function then it might be more than 200us until we get back here
   // to pull CLK low and the receiver will interpret that delay as EOI.
-  if( !waitPinDATA(HIGH, 0) ) return false;
+  if( !waitPinDATA(HIGH, 0) ) { interrupts(); return false; }
   
   if( numData==1 || verifyError )
     {
@@ -1984,17 +2011,19 @@ bool IECBusHandler::transmitIECByte(uint8_t numData)
       // wait for receiver to acknowledge EOI by setting DATA=0 then DATA=1
       // if we got here by "verifyError" then wait indefinitely because we
       // didn't enter the "wait for DATA high" state above
-      if( !waitPinDATA(LOW, verifyError ? 0 : 1000) ) return false;
-      if( !waitPinDATA(HIGH) ) return false;
+      if( !waitPinDATA(LOW, verifyError ? 0 : 1000) ) { interrupts(); return false; }
+      if( !waitPinDATA(HIGH) ) { interrupts(); return false; }
     }
 
   // if we have nothing to send then there was some kind of error 
   // => aborting at this stage will signal the error condition to the receiver
   //    (e.g. "File not found" for LOAD)
-  if( numData==0 ) return false;
+  if( numData==0 ) { interrupts(); return false; }
 
   // signal "data not valid" (CLK=0)
   writePinCLK(LOW);
+
+  interrupts();
 
   // get the data byte from the device
   uint8_t data = m_currentDevice->read();
@@ -2038,10 +2067,8 @@ void IECBusHandler::atnRequest()
 {
   // falling edge on ATN detected (bus master addressing all devices)
   m_flags |= P_ATN;
-  m_flags &= ~(P_DONE|P_DELAYREL);
+  m_flags &= ~P_DONE;
   m_currentDevice = NULL;
-  m_primary = 0;
-  m_secondary = 0;
 
   // ignore anything for 100us after ATN falling edge
   m_timeoutStart = micros();
@@ -2100,84 +2127,115 @@ void IECBusHandler::task()
 
   // ------------------ check for activity on ATN pin -------------------
 
-  if( !(m_flags & P_ATN) && !readPinATN() ) 
+  if( !(m_flags & P_ATN) && !readPinATN() )
     {
       // falling edge on ATN (bus master addressing all devices)
       atnRequest();
     } 
-  else if( (m_flags & P_ATN) && readPinATN() )
+
+  if( (m_flags & P_ATN)!=0 && !readPinATN() && (micros()-m_timeoutStart)>100 && readPinCLK() )
     {
-      // rising edge on ATN (bus master finished addressing all devices)
-      m_flags &= ~P_ATN;
-      
-      // allow ATN to pull DATA low in hardware
-      writePinCTRL(LOW);
-      
-      if( (m_primary & 0xE0)==0x20 && (m_currentDevice = findDevice(m_primary & 0x1F))!=NULL )
+      // we are under ATN, have waited 100us and the host has released CLK
+      // => no more interrupts until the ATN sequence is finished. If we allowed interrupts
+      //    and a long interrupt occurred close to the end of the sequence then we may miss
+      //    a quick ATN low->high->low sequence, i.e completely missing the start of a new
+      //    ATN request.
+      noInterrupts();
+
+      if( receiveIECByteATN(m_primary) &&
+          ((m_primary == 0x3f) || (m_primary == 0x5f) || (findDevice((unsigned int) m_primary & 0x1f)!=NULL && receiveIECByteATN(m_secondary))) )
         {
-          // we were told to listen
-          m_currentDevice->listen(m_secondary);
-          m_flags &= ~P_TALKING;
-          m_flags |= P_LISTENING;
-#ifdef SUPPORT_DOLPHIN
-          // see comments in function receiveDolphinByte
-          if( m_secondary==0x61 ) m_dolphinCtr = 2*DOLPHIN_PREBUFFER_BYTES;
-#endif
-          // set DATA=0 ("I am here")
-          writePinDATA(LOW);
-        } 
-      else if( (m_primary & 0xE0)==0x40 && (m_currentDevice = findDevice(m_primary & 0x1F))!=NULL )
-        {
-          // we were told to talk
-#ifdef SUPPORT_JIFFY
-          if( (m_currentDevice->m_sflags & S_JIFFY_DETECTED)!=0 && m_secondary==0x61 )
-            { 
-              // in JiffyDOS, secondary 0x61 when talking enables "block transfer" mode
-              m_secondary = 0x60; 
-              m_currentDevice->m_sflags |= S_JIFFY_BLOCK; 
-            }
-#endif        
-          m_currentDevice->talk(m_secondary);
-          m_flags &= ~P_LISTENING;
-          m_flags |= P_TALKING;
-#ifdef SUPPORT_DOLPHIN
-          // see comments in function transmitDolphinByte
-          if( m_secondary==0x60 ) m_dolphinCtr = 0;
-#endif
-          // wait for bus master to set CLK=1 (and DATA=0) for role reversal
-          if( waitPinCLK(HIGH) )
+          // this is either UNLISTEN or UNTALK or we were addressed and properly received the secondary address
+
+          // wait until ATN is released
+          while( !readPinATN() );
+          m_flags &= ~P_ATN;
+
+          // allow ATN to pull DATA low in hardware
+          writePinCTRL(LOW);
+          
+          if( (m_primary & 0xE0)==0x20 && (m_currentDevice = findDevice(m_primary & 0x1F))!=NULL )
             {
-              // now set CLK=0 and DATA=1
-              writePinCLK(LOW);
+              // we were told to listen
+              m_currentDevice->listen(m_secondary);
+              m_flags &= ~P_TALKING;
+              m_flags |= P_LISTENING;
+#ifdef SUPPORT_DOLPHIN
+              // see comments in function receiveDolphinByte
+              if( m_secondary==0x61 ) m_dolphinCtr = 2*DOLPHIN_PREBUFFER_BYTES;
+#endif
+              // set DATA=0 ("I am here")
+              writePinDATA(LOW);
+            }
+          else if( (m_primary & 0xE0)==0x40 && (m_currentDevice = findDevice(m_primary & 0x1F))!=NULL )
+            {
+              // we were told to talk
+#ifdef SUPPORT_JIFFY
+              if( (m_currentDevice->m_sflags & S_JIFFY_DETECTED)!=0 && m_secondary==0x61 )
+                { 
+                  // in JiffyDOS, secondary 0x61 when talking enables "block transfer" mode
+                  m_secondary = 0x60; 
+                  m_currentDevice->m_sflags |= S_JIFFY_BLOCK; 
+                }
+#endif        
+              m_currentDevice->talk(m_secondary);
+              m_flags &= ~P_LISTENING;
+              m_flags |= P_TALKING;
+#ifdef SUPPORT_DOLPHIN
+              // see comments in function transmitDolphinByte
+              if( m_secondary==0x60 ) m_dolphinCtr = 0;
+#endif
+              // wait for bus master to set CLK=1 (and DATA=0) for role reversal
+              if( waitPinCLK(HIGH) )
+                {
+                  // now set CLK=0 and DATA=1
+                  writePinCLK(LOW);
+                  writePinDATA(HIGH);
+                  
+                  // wait 80us before transmitting first byte of data
+                  m_timeoutStart = micros();
+                  m_timeoutDuration = 80;
+                }
+            }
+          else if( (m_primary == 0x3f) && (m_flags & P_LISTENING) )
+            {
+              // all devices were told to stop listening
+              m_flags &= ~P_LISTENING;
+              for(uint8_t i=0; i<m_numDevices; i++)
+                m_devices[i]->unlisten();
+            }
+          else if( m_primary == 0x5f && (m_flags & P_TALKING) )
+            {
+              // all devices were told to stop talking
+              m_flags &= ~P_TALKING;
+              for(uint8_t i=0; i<m_numDevices; i++)
+                m_devices[i]->untalk();
+            }
+          
+          if( !(m_flags & (P_LISTENING | P_TALKING)) )
+            {
+              // we're neither listening nor talking => release CLK/DATA
+              writePinCLK(HIGH);
               writePinDATA(HIGH);
-
-              // wait 80us before transmitting first byte of data
-              m_timeoutStart = micros();
-              m_timeoutDuration = 80;
             }
         }
-      else if( (m_primary == 0x3f) && (m_flags & P_LISTENING) )
+      else
         {
-          // all devices were told to stop listening
-          m_flags &= ~P_LISTENING;
-          for(uint8_t i=0; i<m_numDevices; i++)
-            m_devices[i]->unlisten();
-        }
-      else if( m_primary == 0x5f && (m_flags & P_TALKING) )
-        {
-          // all devices were told to stop talking
-          m_flags &= ~P_TALKING;
-          for(uint8_t i=0; i<m_numDevices; i++)
-            m_devices[i]->untalk();
-        }
+          // either we were not addressed or there was an error receiving the
+          // primary/secondary address
 
-      if( !(m_flags & (P_LISTENING | P_TALKING)) )
-        {
-          // we're neither listening nor talking => make sure we're not
-          // holding the DATA or CLOCK line to 0
+          delayMicrosecondsISafe(150);
           writePinCLK(HIGH);
           writePinDATA(HIGH);
+          while( !readPinATN() );
         }
+
+      interrupts();
+    }
+  else if( (m_flags & P_ATN)!=0 && readPinATN() )
+    {
+      // host has released ATN
+      m_flags &= ~P_ATN;
     }
 
 #ifdef SUPPORT_DOLPHIN
@@ -2299,7 +2357,7 @@ void IECBusHandler::task()
 
   // ------------------ receiving data -------------------
 
-  if( (m_flags & (P_ATN | P_LISTENING))!=0 && (m_flags & P_DONE)==0 )
+  if( (m_flags & (P_ATN|P_LISTENING|P_DONE))==P_LISTENING )
     {
       // we are either under ATN or in "listening" mode and not yet done with the transaction
 
@@ -2310,19 +2368,13 @@ void IECBusHandler::task()
       int8_t numData = m_currentDevice ? m_currentDevice->canWrite() : 0;
       m_inTask = true;
 
-      if( !(m_flags & P_ATN) && !readPinATN() )
+      if( !readPinATN() )
         {
           // a falling edge on ATN happened while we were stuck in "canWrite"
           atnRequest();
         }
-      else if( (m_flags & P_ATN) && (micros()-m_timeoutStart)<100 )
-        {
-          // ignore anything that happens during first 100us after falling
-          // edge on ATN (other devices may have been sending and need
-          // some time to set CLK=1). m_timeoutStart is set in atnRequest()
-        }
 #ifdef SUPPORT_JIFFY
-      else if( !(m_flags & P_ATN) && (m_currentDevice->m_sflags & S_JIFFY_DETECTED)!=0 && numData>=0 )
+      else if( (m_currentDevice->m_sflags & S_JIFFY_DETECTED)!=0 && numData>=0 )
         {
           // receiving under JiffyDOS protocol
           if( !receiveJiffyByte(numData>0) )
@@ -2336,7 +2388,7 @@ void IECBusHandler::task()
           }
 #endif
 #ifdef SUPPORT_DOLPHIN
-      else if( (m_currentDevice->m_sflags & S_DOLPHIN_DETECTED)!=0 && numData>=0 && !(m_flags & P_ATN) )
+      else if( (m_currentDevice->m_sflags & S_DOLPHIN_DETECTED)!=0 && numData>=0 )
         {
           // receiving under DolphinDOS protocol
           if( !readPinCLK() )
@@ -2351,7 +2403,7 @@ void IECBusHandler::task()
             }
         }
 #endif
-      else if( ((m_flags & P_ATN) || numData>=0) && readPinCLK() ) 
+      else if( numData>=0 && readPinCLK() )
         {
           // either under ATN (in which case we always accept data)
           // or canWrite() result was non-negative
@@ -2360,18 +2412,8 @@ void IECBusHandler::task()
             {
               // receive failed => transaction is done
               m_flags |= P_DONE;
-
-              // if we are not delaying the DATA release then release
-              // release it now
-              if( (m_flags & P_DELAYREL)==0 ) writePinDATA(HIGH);
             }
         }
-    }
-  else if( (m_flags & P_DELAYREL)!=0 && (micros()-m_timeoutStart)>m_timeoutDuration )
-    {
-      // we have waited long enough => release DATA now
-      writePinDATA(HIGH);
-      m_flags &= ~P_DELAYREL;
     }
 
   // ------------------ transmitting data -------------------

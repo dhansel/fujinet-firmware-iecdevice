@@ -111,13 +111,15 @@ class IECBusHandler
   bool waitPinCLK(bool state, uint16_t timeout = 1000);
 
   void atnRequest();
+  bool receiveIECByteATN(uint8_t &data);
   bool receiveIECByte(bool canWriteOk);
   bool transmitIECByte(uint8_t numData);
 
   volatile uint16_t m_timeoutDuration; 
   volatile uint32_t m_timeoutStart;
   volatile bool m_inTask;
-  volatile uint8_t m_flags, m_primary, m_secondary;
+  volatile uint8_t m_flags;
+  uint8_t m_primary, m_secondary;
 
 #ifdef IOREG_TYPE
   volatile IOREG_TYPE *m_regCLKwrite, *m_regCLKmode, *m_regDATAwrite, *m_regDATAmode;
