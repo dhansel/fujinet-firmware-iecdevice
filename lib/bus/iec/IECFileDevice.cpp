@@ -83,7 +83,7 @@ IECFileDevice::IECFileDevice(uint8_t devnr) :
   IECDevice(devnr)
 {
   m_cmd = IFD_NONE;
-  m_sflags = 0;
+  m_opening = false;
 }
 
 
@@ -120,6 +120,7 @@ void IECFileDevice::begin()
   m_statusBufferLen = 0;
   memset(m_dataBufferLen, 0, 15);
   m_cmd = IFD_NONE;
+  m_opening = false;
 
   // calling fileTask() may result in significant time spent accessing the
   // disk during which we can not respond to ATN requests within the required
@@ -626,6 +627,7 @@ void IECFileDevice::reset()
   m_statusBufferLen = 0;
   memset(m_dataBufferLen, 0, 15);
   m_cmd = IFD_NONE;
+  m_opening = false;
 
 #ifdef SUPPORT_EPYX
   m_epyxCtr = 0;
