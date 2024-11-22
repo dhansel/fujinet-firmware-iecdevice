@@ -21,8 +21,6 @@
 
 #include "IECDevice.h"
 
-#define IECFILEDEVICE_NAME_BUFFER_SIZE   128
-#define IECFILEDEVICE_STATUS_BUFFER_SIZE 128
 
 class IECFileDevice : public IECDevice
 {
@@ -77,7 +75,7 @@ class IECFileDevice : public IECDevice
   // called on falling edge of RESET line
   virtual void reset();
 
-  // can be called by derived class to set the status buffer (dataLen max 32 bytes)
+  // can be called by derived class to set the status buffer
   void setStatus(const char *data, uint8_t dataLen);
 
   // can be called by derived class to clear the status buffer, causing readStatus()
