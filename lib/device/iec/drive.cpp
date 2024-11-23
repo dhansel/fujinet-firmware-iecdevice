@@ -207,7 +207,11 @@ uint8_t iecChannelHandlerFile::readBufferData()
           m_fixLoadAddress = -1;
         }
       else
-        m_len = m_stream->read(m_data, BUFFER_SIZE);
+        m_len = 0;
+
+      // try to fill buffer
+      while( m_len<BUFFER_SIZE && !m_stream->eos() )
+        m_len += m_stream->read(m_data+m_len, BUFFER_SIZE-m_len);
     }
 
   return ST_OK;
