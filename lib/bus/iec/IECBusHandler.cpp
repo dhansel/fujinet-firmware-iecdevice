@@ -760,16 +760,15 @@ bool IRAM_ATTR IECBusHandler::transmitJiffyByte(uint8_t numData)
     }
 
   // EOI/error status is read by receiver 59 cycles after DATA HIGH (FBEF)
-  interrupts();
-
-  // make sure the DATA line has had time to settle on HIGH
   // receiver sets DATA low 63 cycles after initial DATA HIGH (FBF2)
   timer_wait_until(60);
 
   // receiver signals "done" by pulling DATA low (FBF2)
   JDEBUG1();
-  if( !waitPinDATA(LOW) ) return false;
+  if( !waitPinDATA(LOW) ) { interrupts(); return false; }
   JDEBUG0();
+
+  interrupts();
 
   if( numData>0 )
     {
