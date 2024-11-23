@@ -1575,7 +1575,7 @@ bool IRAM_ATTR IECBusHandler::transmitEpyxByte(uint8_t data)
   // release DATA and give it time to stabilize, also some
   // buffer time if we got slightly delayed when waiting before
   writePinDATA(HIGH);
-  timer_wait_until(49);
+  timer_wait_until(52);
 
   // wait for DATA low, receiver signaling "not ready"
   if( !waitPinDATA(LOW, 0) ) return false;
