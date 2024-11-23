@@ -132,6 +132,29 @@ static unsigned long timer_start_us;
 #define JDEBUG1() gpio_put(20, 1)
 #endif
 
+// ---------------- ESP32
+
+#elif defined(ESP_PLATFORM)
+
+#include <esp_rom_sys.h>
+static DRAM_ATTR esp_cpu_cycle_count_t timer_start_cycles, timer_cycles_per_us;
+#define timer_init()         timer_cycles_per_us = esp_rom_get_cpu_ticks_per_us()
+#define timer_reset()        timer_start_cycles = esp_cpu_get_cycle_count()
+#define timer_start()        timer_start_cycles = esp_cpu_get_cycle_count()
+#define timer_stop()         while(0)
+#define timer_wait_until(us) timer_wait_until_(us+0.5)
+FORCE_INLINE_ATTR void timer_wait_until_(uint32_t us)
+{
+  esp_cpu_cycle_count_t to = us * timer_cycles_per_us;
+  while( (esp_cpu_get_cycle_count()-timer_start_cycles) < to );
+}
+
+#if defined(JDEBUG)
+#define JDEBUGI() pinMode(26, OUTPUT)
+#define JDEBUG0() GPIO.out_w1tc = bit(26)
+#define JDEBUG1() GPIO.out_w1ts = bit(26)
+#endif
+
 // ---------------- other (32-bit) platforms
 
 #else
@@ -184,9 +207,20 @@ static unsigned long timer_start_us;
 #define digitalWriteFastExt(pin, reg, bit, v) digitalWrite(pin, v)
 #endif
 
+// on ESP32 we need very timing-critical code (i.e. transmitting/receiving data
+// under fast-load protocols) to reside in IRAM
+#ifndef IRAM_ATTR
+#ifdef ESP_PLATFORM
+#error "Expected IRAM_ATTR to be defined"
+#else
+#define IRAM_ATTR
+#endif
+#endif
+
+
 // delayMicroseconds on some platforms does not work if called when interrupts are disabled
 // => define a version that does work on all supported platforms
-static void delayMicrosecondsISafe(uint16_t t)
+static IRAM_ATTR void delayMicrosecondsISafe(uint16_t t)
 {
   timer_init();
   timer_start();
@@ -220,7 +254,7 @@ static void delayMicrosecondsISafe(uint16_t t)
 IECBusHandler *IECBusHandler::s_bushandler1 = NULL, *IECBusHandler::s_bushandler2 = NULL;
 
 
-void IECBusHandler::writePinCLK(bool v)
+void IRAM_ATTR IECBusHandler::writePinCLK(bool v)
 {
   // Emulate open collector behavior: 
   // - switch pin to INPUT  mode (high-Z output) for true
@@ -229,7 +263,7 @@ void IECBusHandler::writePinCLK(bool v)
 }
 
 
-void IECBusHandler::writePinDATA(bool v)
+void IRAM_ATTR IECBusHandler::writePinDATA(bool v)
 {
   // Emulate open collector behavior: 
   // - switch pin to INPUT  mode (high-Z output) for true
@@ -238,32 +272,32 @@ void IECBusHandler::writePinDATA(bool v)
 }
 
 
-void IECBusHandler::writePinCTRL(bool v)
+void IRAM_ATTR IECBusHandler::writePinCTRL(bool v)
 {
   if( m_pinCTRL!=0xFF )
     digitalWrite(m_pinCTRL, v);
 }
 
 
-bool IECBusHandler::readPinATN()
+bool IRAM_ATTR IECBusHandler::readPinATN()
 {
   return digitalReadFastExt(m_pinATN, m_regATNread, m_bitATN)!=0;
 }
 
 
-bool IECBusHandler::readPinCLK()
+bool IRAM_ATTR IECBusHandler::readPinCLK()
 {
   return digitalReadFastExt(m_pinCLK, m_regCLKread, m_bitCLK)!=0;
 }
 
 
-bool IECBusHandler::readPinDATA()
+bool IRAM_ATTR IECBusHandler::readPinDATA()
 {
   return digitalReadFastExt(m_pinDATA, m_regDATAread, m_bitDATA)!=0;
 }
 
 
-bool IECBusHandler::readPinRESET()
+bool IRAM_ATTR IECBusHandler::readPinRESET()
 {
   if( m_pinRESET==0xFF ) return true;
   return digitalReadFastExt(m_pinRESET, m_regRESETread, m_bitRESET)!=0;
@@ -548,14 +582,7 @@ bool IECBusHandler::enableJiffyDosSupport(IECDevice *dev, bool enable)
 }
 
 
-#ifdef ESP_PLATFORM
-// if we don't optimize on ESP, we get code that uses MEMW instructions 
-// (which can delay execution) within the timing-sensitive transmission code
-#pragma GCC push_options
-#pragma GCC optimize ("O2")
-#endif
-
-bool IECBusHandler::receiveJiffyByte(bool canWriteOk)
+bool IRAM_ATTR IECBusHandler::receiveJiffyByte(bool canWriteOk)
 {
   uint8_t data = 0;
   JDEBUG1();
@@ -651,7 +678,7 @@ bool IECBusHandler::receiveJiffyByte(bool canWriteOk)
 }
 
 
-bool IECBusHandler::transmitJiffyByte(uint8_t numData)
+bool IRAM_ATTR IECBusHandler::transmitJiffyByte(uint8_t numData)
 {
   uint8_t data = numData>0 ? m_currentDevice->peek() : 0;
 
@@ -755,7 +782,7 @@ bool IECBusHandler::transmitJiffyByte(uint8_t numData)
 }
 
 
-bool IECBusHandler::transmitJiffyBlock(uint8_t *buffer, uint8_t numBytes)
+bool IRAM_ATTR IECBusHandler::transmitJiffyBlock(uint8_t *buffer, uint8_t numBytes)
 {
   JDEBUG1();
   timer_init();
@@ -881,9 +908,6 @@ bool IECBusHandler::transmitJiffyBlock(uint8_t *buffer, uint8_t numBytes)
   return true;
 }
 
-#ifdef ESP_PLATFORM
-#pragma GCC pop_options
-#endif
 
 #endif // !SUPPORT_JIFFY
 
@@ -1491,14 +1515,7 @@ bool IECBusHandler::receiveEpyxByte(uint8_t &data)
 }
 
 
-#ifdef ESP_PLATFORM
-// if we don't optimize on ESP, we get code that uses MEMW instructions 
-// (which can delay execution) within the timing-sensitive transmission code
-#pragma GCC push_options
-#pragma GCC optimize ("O2")
-#endif
-
-bool IECBusHandler::transmitEpyxByte(uint8_t data)
+bool IRAM_ATTR IECBusHandler::transmitEpyxByte(uint8_t data)
 {
   // receiver expects all data bits to be inverted
   data = ~data;
@@ -1556,7 +1573,8 @@ bool IECBusHandler::transmitEpyxByte(uint8_t data)
   // wait until 47 us after DATA
   timer_wait_until(47);
 
-  // release DATA and give it time to stabilize
+  // release DATA and give it time to stabilize, also some
+  // buffer time if we got slightly delayed when waiting before
   writePinDATA(HIGH);
   timer_wait_until(49);
 
@@ -1566,10 +1584,6 @@ bool IECBusHandler::transmitEpyxByte(uint8_t data)
   JDEBUG0();
   return true;
 }
-
-#ifdef ESP_PLATFORM
-#pragma GCC pop_options
-#endif
 
 
 #ifdef SUPPORT_EPYX_SECTOROPS
