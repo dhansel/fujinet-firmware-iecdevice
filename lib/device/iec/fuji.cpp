@@ -123,13 +123,11 @@ void iecFuji::setup(systemBus *bus)
     bus->attachDevice(new iecNetwork(16));     // 16-19 Network Devices
 
     //Serial.print("CPM "); bus->addDevice(new iecCpm(), 20);             // 20-29 Other
-    //Serial.print("Clock "); bus->addDevice(new iecClock(), 29);
+    bus->attachDevice(new iecClock(29));
 
-    // FujiNet (don't use fastloader protocols)
+    // FujiNet
     setDeviceNumber(30); 
     bus->attachDevice(this);
-    enableJiffyDosSupport(false);
-    enableEpyxFastLoadSupport(false);
 }
 
 void logResponse(const void* data, size_t length)
