@@ -161,6 +161,8 @@ iecChannelHandlerFile::iecChannelHandlerFile(iecDrive *drive, MStream *stream, i
 
 iecChannelHandlerFile::~iecChannelHandlerFile()
 {
+  Debug_printv("Stream %s closed", m_stream->url.c_str());
+
   if( m_stream->mode == std::ios_base::out && m_len>0 )
     writeBufferData();
 
@@ -450,7 +452,7 @@ void iecDrive::open(uint8_t channel, const char *cname)
       name = mstr::drop(name, 2);
     }      
 
-  Debug_printv("channel[%d] m_cwd[%s] name[%s] mode[%s]", channel, m_cwd->url.c_str(), name.c_str(), 
+  Debug_printv("opening channel[%d] m_cwd[%s] name[%s] mode[%s]", channel, m_cwd->url.c_str(), name.c_str(), 
                mode==std::ios_base::out ? (overwrite ? "replace" : "write") : "read");
 
   if( name.length()==0 )
@@ -765,8 +767,8 @@ void iecDrive::set_cwd(std::string path)
 */
 mediatype_t iecDrive::mount(FILE *f, const char *filename, uint32_t disksize, mediatype_t disk_type)
 {
-  std::string url;
-  if( m_host ) url = m_host->get_hostname();
+  Debug_printv("filename[%s], disksize[%d] disktype[%d]", filename, disksize, disk_type);
+  std::string url = this->m_host->get_basepath();
   
   mstr::toLower(url);
   if ( url == "sd" )
