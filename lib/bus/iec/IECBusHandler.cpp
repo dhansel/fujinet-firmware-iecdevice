@@ -2100,6 +2100,9 @@ bool IECBusHandler::transmitIECByte(uint8_t numData)
 // interrupt handler or by polling within the microTask function
 void IECBusHandler::atnRequest()
 {
+  // check if ATN is actually LOW, if not then just return (stray interrupt request)
+  if( readPinATN() ) return;
+
   // falling edge on ATN detected (bus master addressing all devices)
   m_flags |= P_ATN;
   m_flags &= ~P_DONE;
@@ -2392,15 +2395,15 @@ void IECBusHandler::task()
 
   // ------------------ receiving data -------------------
 
-  if( (m_flags & (P_ATN|P_LISTENING|P_DONE))==P_LISTENING )
+  if( (m_flags & (P_ATN|P_LISTENING|P_DONE))==P_LISTENING && (m_currentDevice!=NULL) )
     {
-      // we are either under ATN or in "listening" mode and not yet done with the transaction
+     // we are not under ATN, are in "listening" mode and not done with the transaction
 
       // check if we can write (also gives devices a chance to
       // execute time-consuming tasks while bus master waits for ready-for-data)
       // (if we are receiving under ATN then m_currentDevice==NULL)
       m_inTask = false;
-      int8_t numData = m_currentDevice ? m_currentDevice->canWrite() : 0;
+      int8_t numData = m_currentDevice->canWrite();
       m_inTask = true;
 
       if( !readPinATN() )
@@ -2453,7 +2456,7 @@ void IECBusHandler::task()
 
   // ------------------ transmitting data -------------------
 
-  if( (m_flags & (P_ATN|P_TALKING|P_DONE))==P_TALKING )
+  if( (m_flags & (P_ATN|P_TALKING|P_DONE))==P_TALKING && (m_currentDevice!=NULL) )
    {
      // we are not under ATN, are in "talking" mode and not done with the transaction
 
