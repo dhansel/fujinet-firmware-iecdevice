@@ -177,7 +177,7 @@ iecChannelHandlerFile::~iecChannelHandlerFile()
 
   double tseconds = m_transportTimeUS / 1000000.0;
   cps = m_byteCount / (seconds-tseconds);
-  Debug_printv("Transport (network/sd) time was %0.3f seconds, pure IEC transfer speed: %0.2fcps", tseconds, cps);
+  Debug_printv("Transport (network/sd) took %0.3f seconds, pure IEC transfers @ %0.2fcps", tseconds, cps);
 
   delete m_stream;
 }
@@ -185,9 +185,12 @@ iecChannelHandlerFile::~iecChannelHandlerFile()
 
 uint8_t iecChannelHandlerFile::writeBufferData()
 {
+  /*
+  // if m_stream is within a disk image then m_stream->mode does not get initialized properly!
   if( m_stream->mode != std::ios_base::out )
     return ST_FILE_TYPE_MISMATCH;
   else
+  */
     {
       Debug_printv("bufferSize[%d]", m_len);
       uint64_t t = esp_timer_get_time();
@@ -207,9 +210,12 @@ uint8_t iecChannelHandlerFile::writeBufferData()
 
 uint8_t iecChannelHandlerFile::readBufferData()
 {
+  /*
+  // if m_stream is within a disk image then m_stream->mode does not get initialized properly!
   if( m_stream->mode != std::ios_base::in )
     return ST_FILE_TYPE_MISMATCH;
   else
+  */
     {
       Debug_printv("size[%d] avail[%d] pos[%d]", m_stream->size(), m_stream->available(), m_stream->position());
 
@@ -538,11 +544,6 @@ void iecDrive::open(uint8_t channel, const char *cname)
               Debug_printv("Error: file doesn't exist [%s]", f->url.c_str());
               setStatusCode(ST_FILE_NOT_FOUND);
             }
-          else if( (mode == std::ios_base::in) && f->size()==0 && !f->isDirectory() )
-            {
-              Debug_printv("Error: file length is zero [%s]", f->url.c_str());
-              setStatusCode(ST_FILE_NOT_FOUND);
-            }
           else if( (mode == std::ios_base::out) && f->exists() && !overwrite )
             {
               Debug_printv("Error: file exists [%s]", f->url.c_str());
@@ -557,6 +558,12 @@ void iecDrive::open(uint8_t channel, const char *cname)
                   Debug_printv("Error: could not get stream for file [%s]", f->url.c_str());
                   setStatusCode(ST_DRIVE_NOT_READY);
                 }
+              else if( (mode == std::ios_base::in) && new_stream->size()==0 && !f->isDirectory() )
+                {
+                  Debug_printv("Error: file length is zero [%s]", f->url.c_str());
+                  delete new_stream;
+                  setStatusCode(ST_FILE_NOT_FOUND);
+                }
               else if( !new_stream->isOpen() )
                 {
                   Debug_printv("Error: could not open file stream [%s]", f->url.c_str());
@@ -570,19 +577,20 @@ void iecDrive::open(uint8_t channel, const char *cname)
                   m_channels[channel] = new iecChannelHandlerFile(this, new_stream, f->isDirectory() ? 0x0801 : -1);
                   m_numOpenChannels++;
                   setStatusCode(ST_OK);
-                }
           
-              if( new_stream->has_subdirs )
-                {
-                  // Filesystem supports sub directories => set m_cwd to parent directory of file
-                  Debug_printv("Subdir Change Directory Here! stream[%s] > base[%s]", f->url.c_str(), f->base().c_str());
-                  m_cwd.reset(MFSOwner::File(f->base()));
-                }
-              else
-                {
-                  // Handles media files that may have '/' as part of the filename
-                  Debug_printv("Change Directory Here! stream[%s]", new_stream->url.c_str());
-                  m_cwd.reset(MFSOwner::File(new_stream->url));
+                  if( new_stream->has_subdirs )
+                    {
+                      // Filesystem supports sub directories => set m_cwd to parent directory of file
+                      Debug_printv("Subdir Change Directory Here! stream[%s] > base[%s]", f->url.c_str(), f->base().c_str());
+                      m_cwd.reset(MFSOwner::File(f->base()));
+                    }
+                  else
+                    {
+                      // Handles media files that may have '/' as part of the filename
+                      auto f = MFSOwner::File( new_stream->url );
+                      Debug_printv( "Change Directory Here! istream[%s] > base[%s]", new_stream->url.c_str(), f->streamFile->url.c_str() );
+                      m_cwd.reset( f->streamFile );
+                    }
                 }
             }
         }
@@ -727,6 +735,7 @@ void iecDrive::getStatus(char *buffer, uint8_t bufferSize)
     case ST_SPLASH         : msg = PRODUCT_ID; break;
     case ST_NO_CHANNEL     : msg = "NO CHANNEL"; break;
     case ST_DRIVE_NOT_READY: msg = "DRIVE NOT READY"; break;
+    case ST_FILE_TYPE_MISMATCH: msg = "FILE TYPE MISMATCH"; break;
     default                : msg = "UNKNOWN ERROR"; break;
     }
 
