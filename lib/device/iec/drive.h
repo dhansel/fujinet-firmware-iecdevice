@@ -51,6 +51,8 @@ class iecChannelHandlerFile : public iecChannelHandler
  private:
   MStream *m_stream;
   int      m_fixLoadAddress;
+  uint32_t  m_byteCount;
+  uint64_t  m_timeStart, m_transportTimeUS;
 };
 
 

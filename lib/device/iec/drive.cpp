@@ -156,17 +156,29 @@ iecChannelHandlerFile::iecChannelHandlerFile(iecDrive *drive, MStream *stream, i
 {
   m_stream = stream;
   m_fixLoadAddress = fixLoadAddress;
+  m_timeStart = esp_timer_get_time();
+  m_byteCount = 0;
+  m_transportTimeUS = 0;
 }
 
 
 iecChannelHandlerFile::~iecChannelHandlerFile()
 {
-  Debug_printv("Stream %s closed", m_stream->url.c_str());
+  double seconds = (esp_timer_get_time()-m_timeStart) / 1000000.0;
 
   if( m_stream->mode == std::ios_base::out && m_len>0 )
     writeBufferData();
 
   m_stream->close();
+  Debug_printv("Stream closed.");
+
+  double cps = m_byteCount / seconds;
+  Debug_printv("%s %d bytes in %0.2f seconds @ %0.2fcps", m_stream->mode == std::ios_base::in ? "Sent" : "Received", m_byteCount, seconds, cps);
+
+  double tseconds = m_transportTimeUS / 1000000.0;
+  cps = m_byteCount / (seconds-tseconds);
+  Debug_printv("Transport (network/sd) time was %0.3f seconds, pure IEC transfer speed: %0.2fcps", tseconds, cps);
+
   delete m_stream;
 }
 
@@ -178,7 +190,10 @@ uint8_t iecChannelHandlerFile::writeBufferData()
   else
     {
       Debug_printv("bufferSize[%d]", m_len);
+      uint64_t t = esp_timer_get_time();
       size_t n = m_stream->write(m_data, m_len);
+      m_transportTimeUS += (esp_timer_get_time()-t);
+      m_byteCount += n;
       if( n<m_len )
         {
           Debug_printv("Error: write failed: n[%d] < m_len[%d]", n, m_len);
@@ -200,7 +215,9 @@ uint8_t iecChannelHandlerFile::readBufferData()
 
       if( m_fixLoadAddress>=0 && m_stream->position()==0 )
         {
+          uint64_t t = esp_timer_get_time();
           m_len = m_stream->read(m_data, BUFFER_SIZE);
+          m_transportTimeUS += (esp_timer_get_time()-t);
           if( m_len>=2 )
             {
               m_data[0] = (m_fixLoadAddress & 0x00FF);
@@ -213,7 +230,13 @@ uint8_t iecChannelHandlerFile::readBufferData()
 
       // try to fill buffer
       while( m_len<BUFFER_SIZE && !m_stream->eos() )
-        m_len += m_stream->read(m_data+m_len, BUFFER_SIZE-m_len);
+        {
+          uint64_t t = esp_timer_get_time();
+          m_len += m_stream->read(m_data+m_len, BUFFER_SIZE-m_len);
+          m_transportTimeUS += (esp_timer_get_time()-t);
+        }
+
+      m_byteCount += m_len;
     }
 
   return ST_OK;
