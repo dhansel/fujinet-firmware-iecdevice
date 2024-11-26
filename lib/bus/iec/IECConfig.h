@@ -23,7 +23,9 @@
 // for the corresponding fast-load protocols
 #define SUPPORT_JIFFY
 #define SUPPORT_EPYX
-//#define SUPPORT_DOLPHIN
+#ifdef PINMAP_FUJIAPPLE_IEC_DD
+#define SUPPORT_DOLPHIN
+#endif
 
 // support Epyx FastLoad sector operations (disk editor, disk copy, file copy)
 // if this is enabled then the buffer in the setBuffer() call must have a size of

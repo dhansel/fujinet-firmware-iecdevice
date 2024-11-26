@@ -144,6 +144,7 @@ class IECBusHandler
   void parallelBusHandshakeTransmit();
   void setParallelBusModeInput();
   void setParallelBusModeOutput();
+  bool parallelCableDetect();
   uint8_t readParallelData();
   void writeParallelData(uint8_t data);
   void enableParallelPins();

@@ -373,52 +373,54 @@ bool IECBusHandler::waitPinCLK(bool state, uint16_t timeout)
 }
 
 
-IECBusHandler::IECBusHandler(uint8_t pinATN, uint8_t pinCLK, uint8_t pinDATA, uint8_t pinRESET, uint8_t pinCTRL) :
+IECBusHandler::IECBusHandler(uint8_t pinATN, uint8_t pinCLK, uint8_t pinDATA, uint8_t pinRESET, uint8_t pinCTRL)
 #if defined(SUPPORT_DOLPHIN)
 #if defined(ESP_PLATFORM)
   // ESP32
-  m_pinDolphinHandshakeTransmit(4),
+: m_pinDolphinHandshakeTransmit(4),
   m_pinDolphinHandshakeReceive(36),
-  m_pinDolphinParallel{13,14,15,16,17,25,26,27},
+  m_pinDolphinParallel{13,14,15,16,17,25,26,27}
 #elif defined(ARDUINO_ARCH_RP2040)
   // Raspberry Pi Pico
-  m_pinDolphinHandshakeTransmit(6),
+: m_pinDolphinHandshakeTransmit(6),
   m_pinDolphinHandshakeReceive(15),
-  m_pinDolphinParallel{7,8,9,10,11,12,13,14},
+  m_pinDolphinParallel{7,8,9,10,11,12,13,14}
 #elif defined(__SAM3X8E__)
   // Arduino Due
-  m_pinDolphinHandshakeTransmit(52),
+: m_pinDolphinHandshakeTransmit(52),
   m_pinDolphinHandshakeReceive(53),
-  m_pinDolphinParallel{51,50,49,48,47,46,45,44},
+  m_pinDolphinParallel{51,50,49,48,47,46,45,44}
 #elif defined(__AVR_ATmega328P__) || defined(ARDUINO_UNOR4)
   // Arduino UNO, Pro Mini
-  m_pinDolphinHandshakeTransmit(7),
+: m_pinDolphinHandshakeTransmit(7),
   m_pinDolphinHandshakeReceive(2),
-  m_pinDolphinParallel{A0,A1,A2,A3,A4,A5,8,9},
+  m_pinDolphinParallel{A0,A1,A2,A3,A4,A5,8,9}
 #elif defined(__AVR_ATmega2560__)
   // Arduino Mega 2560
-  m_pinDolphinHandshakeTransmit(30),
+: m_pinDolphinHandshakeTransmit(30),
   m_pinDolphinHandshakeReceive(2),
-  m_pinDolphinParallel{22,23,24,25,26,27,28,29},
-#endif
-#endif
-  m_numDevices(0),
-  m_inTask(false),
-  m_flags(0xFF), // 0xFF means: begin() has not yet been called
-#if defined(SUPPORT_JIFFY) || defined(SUPPORT_EPYX) || defined(SUPPORT_DOLPHIN)
-#if IEC_DEFAULT_FASTLOAD_BUFFER_SIZE>0
-  m_bufferSize(IEC_DEFAULT_FASTLOAD_BUFFER_SIZE)
-#else
-  m_buffer(NULL),
-  m_bufferSize(0)
+  m_pinDolphinParallel{22,23,24,25,26,27,28,29}
 #endif
 #endif
 {
+  m_numDevices = 0;
+  m_inTask     = false;
+  m_flags      = 0xFF; // 0xFF means: begin() has not yet been called
+
   m_pinATN       = pinATN;
   m_pinCLK       = pinCLK;
   m_pinDATA      = pinDATA;
   m_pinRESET     = pinRESET;
   m_pinCTRL      = pinCTRL;
+
+#if defined(SUPPORT_JIFFY) || defined(SUPPORT_EPYX) || defined(SUPPORT_DOLPHIN)
+#if IEC_DEFAULT_FASTLOAD_BUFFER_SIZE>0
+  m_bufferSize = IEC_DEFAULT_FASTLOAD_BUFFER_SIZE;
+#else
+  m_buffer = NULL;
+  m_bufferSize = 0;
+#endif
+#endif
 
 #ifdef IOREG_TYPE
   m_bitRESET     = digitalPinToBitMask(pinRESET);
@@ -918,9 +920,48 @@ bool IRAM_ATTR IECBusHandler::transmitJiffyBlock(uint8_t *buffer, uint8_t numByt
 #define DOLPHIN_PREBUFFER_BYTES 2
 
 #if !defined(__AVR_ATmega328P__) && !defined(__AVR_ATmega2560__)
+
 volatile static bool _handshakeReceived = false;
 static void handshakeIRQ(INTERRUPT_FCN_ARG) { _handshakeReceived = true; }
-#define DOLPHIN_NEEDS_INTERRUPTS
+
+bool IRAM_ATTR IECBusHandler::parallelCableDetect()
+{
+  // DolphinDos cable detection happens at the end of the ATN sequence
+  // during which interrupts are disabled so we can't use parallelBusHandshakeReceived()
+  // which relies on the IRQ handler above
+
+#if defined(IOREG_TYPE)
+  volatile IOREG_TYPE *regHandshakeReceive = portInputRegister(digitalPinToPort(m_pinDolphinHandshakeReceive));
+  volatile IOREG_TYPE  bitHandshakeReceive = digitalPinToBitMask(m_pinDolphinHandshakeReceive);
+#endif
+
+  // wait for handshake signal going LOW until ATN goes high
+  while( !digitalReadFastExt(m_pinATN, m_regATNread, m_bitATN) )
+    {
+      if( !digitalReadFastExt(m_pinDolphinHandshakeReceive, regHandshakeReceive, bitHandshakeReceive) ) return true;
+      if( !digitalReadFastExt(m_pinDolphinHandshakeReceive, regHandshakeReceive, bitHandshakeReceive) ) return true;
+      if( !digitalReadFastExt(m_pinDolphinHandshakeReceive, regHandshakeReceive, bitHandshakeReceive) ) return true;
+    }
+
+  return false;
+}
+
+#else
+
+bool IRAM_ATTR IECBusHandler::parallelCableDetect()
+{
+  // clear any previous handshakes
+  parallelBusHandshakeReceived();
+
+  // wait for handshake
+  while( !readPinATN() )
+    if( parallelBusHandshakeReceived() )
+      return true;
+
+  return false;
+}
+
+
 #endif
 
 
@@ -1067,9 +1108,7 @@ void IECBusHandler::enableParallelPins()
 #endif
 
       // initialize parallel bus pins
-      for(int i=0; i<8; i++) pinMode(m_pinDolphinParallel[i], OUTPUT);
-      // switch parallel bus to input
-      setParallelBusModeInput();
+      for(int i=0; i<8; i++) pinMode(m_pinDolphinParallel[i], INPUT);
     }
   else
     {
@@ -1112,7 +1151,9 @@ void IECBusHandler::parallelBusHandshakeTransmit()
 }
 
 
-uint8_t IECBusHandler::readParallelData()
+#pragma GCC push_options
+#pragma GCC optimize ("O2")
+uint8_t IRAM_ATTR IECBusHandler::readParallelData()
 {
   uint8_t res = 0;
   // loop unrolled for performance
@@ -1128,7 +1169,7 @@ uint8_t IECBusHandler::readParallelData()
 }
 
 
-void IECBusHandler::writeParallelData(uint8_t data)
+void IRAM_ATTR IECBusHandler::writeParallelData(uint8_t data)
 {
   // loop unrolled for performance
   digitalWriteFastExt(m_pinDolphinParallel[0], m_regDolphinParallelWrite[0], m_bitDolphinParallel[0], data & 0x01);
@@ -1142,7 +1183,7 @@ void IECBusHandler::writeParallelData(uint8_t data)
 }
 
 
-void IECBusHandler::setParallelBusModeInput()
+void IRAM_ATTR IECBusHandler::setParallelBusModeInput()
 {
   // set parallel bus data pins to input mode
   for(int i=0; i<8; i++) 
@@ -1150,12 +1191,13 @@ void IECBusHandler::setParallelBusModeInput()
 }
 
 
-void IECBusHandler::setParallelBusModeOutput()
+void IRAM_ATTR IECBusHandler::setParallelBusModeOutput()
 {
   // set parallel bus data pins to output mode
   for(int i=0; i<8; i++) 
     pinModeFastExt(m_pinDolphinParallel[i], m_regDolphinParallelMode[i], m_bitDolphinParallel[i], OUTPUT);
 }
+#pragma GCC pop_options
 
 
 bool IECBusHandler::waitParallelBusHandshakeReceived()
@@ -1212,6 +1254,8 @@ bool IECBusHandler::receiveDolphinByte(bool canWriteOk)
       return true;
     }
 
+  noInterrupts();
+
   // signal "ready"
   writePinDATA(HIGH);
 
@@ -1219,18 +1263,18 @@ bool IECBusHandler::receiveDolphinByte(bool canWriteOk)
   if( !waitPinCLK(LOW, 100) )
     {
       // exit if waitPinCLK returned because of falling edge on ATN
-      if( !readPinATN() ) return false;
+      if( !readPinATN() ) { interrupts(); return false; }
 
       // sender did not set CLK low within 100us after we set DATA high
       // => it is signaling EOI
       // acknowledge we received it by setting DATA low for 60us
       eoi = true;
       writePinDATA(LOW);
-      if( !waitTimeout(60) ) return false;
+      if( !waitTimeout(60) ) { interrupts(); return false; }
       writePinDATA(HIGH);
 
       // keep waiting for CLK low
-      if( !waitPinCLK(LOW) ) return false;
+      if( !waitPinCLK(LOW) ) { interrupts(); return false; }
     }
 
   // get data
@@ -1241,6 +1285,8 @@ bool IECBusHandler::receiveDolphinByte(bool canWriteOk)
 
       // confirm receipt
       writePinDATA(LOW);
+
+      interrupts();
 
       // when executing a SAVE command, DolphinDos first sends two bytes of data,
       // and then the "XZ" burst request. If the transmission happens in burst mode then
@@ -1267,6 +1313,7 @@ bool IECBusHandler::receiveDolphinByte(bool canWriteOk)
   else
     {
       // canWrite reported an error
+      interrupts();
       return false;
     }
 }
@@ -1289,7 +1336,9 @@ bool IECBusHandler::transmitDolphinByte(uint8_t numData)
   writePinCLK(HIGH);
 
   // wait for "ready-for-data" (DATA=0)
+  JDEBUG1();
   if( !waitPinDATA(HIGH, 0) ) { interrupts(); return false; }
+  JDEBUG0();
 
   if( numData==0 ) 
     {
@@ -1307,7 +1356,9 @@ bool IECBusHandler::transmitDolphinByte(uint8_t numData)
     }
 
   // put data byte on parallel bus
+  JDEBUG1();
   setParallelBusModeOutput();
+  JDEBUG0();
   writeParallelData(data);
 
   // set CLK low (signal "data ready")
@@ -1452,14 +1503,21 @@ bool IECBusHandler::transmitDolphinBurst()
   // switch parallel bus back to input
   setParallelBusModeInput();
 
+  // after seeing our end-of-data and confirmit it, receiver waits for 2ms
+  // for us to send the handshake (below) => no interrupts, otherwise we may
+  // exceed the timeout
+  noInterrupts();
+
   // signal end-of-data
   writePinCLK(HIGH);
 
   // wait for receiver to confirm
-  if( !waitPinDATA(HIGH) ) return false;
+  if( !waitPinDATA(HIGH) ) { interrupts(); return false; }
 
   // send handshake
   parallelBusHandshakeTransmit();
+
+  interrupts();
 
   return true;
 }
@@ -1871,7 +1929,10 @@ bool IECBusHandler::receiveIECByteATN(uint8_t &data)
   writePinDATA(HIGH);
 
   // wait for CLK=0
-  if( !waitPinCLK(LOW) ) return false;
+  // must wait indefinitely since other devices may be holding DATA low until
+  // they are ready, bus master will start sending as soon as all devices have
+  // released DATA
+  if( !waitPinCLK(LOW, 0) ) return false;
 
   // receive data bits
   data = 0;
@@ -1923,31 +1984,13 @@ bool IECBusHandler::receiveIECByteATN(uint8_t &data)
   //  LOW->HIGH edge on ATN, 
   //      if so then timeout, host does not support DolphinDos
 
-#ifdef DOLPHIN_NEEDS_INTERRUPTS
-  // this is unfortunate: we need interrupts to detect the falling edge on
-  // the handshake line but other interrupts (esp on ESP32) may cause us to
-  // miss ATN edges if enabled at this point. TODO => find a better way to handle this
-  interrupts();
-#endif
   IECDevice *dev = findDevice(m_primary & 0x1F);
   if( dev!=NULL && (dev->m_sflags & S_DOLPHIN_ENABLED) && (&data==&m_secondary) )
-    {
-      // clear any previous handshakes
-      parallelBusHandshakeReceived();
-          
-      // wait for handshake
-      while( !readPinATN() )
-        if( parallelBusHandshakeReceived() )
-          {
-            JDEBUG1();
-            dev->m_sflags |= S_DOLPHIN_DETECTED;
-            parallelBusHandshakeTransmit(); 
-            break;
-          }
-    }
-#ifdef DOLPHIN_NEEDS_INTERRUPTS
-  noInterrupts();
-#endif
+    if( parallelCableDetect() )
+      {
+        dev->m_sflags |= S_DOLPHIN_DETECTED;
+        parallelBusHandshakeTransmit();
+      }
 #endif
 
   return true;
