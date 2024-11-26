@@ -457,9 +457,9 @@ void iecDrive::open(uint8_t channel, const char *cname)
   Debug_printv("iecDrive::open(#%d, %d, \"%s\")", m_devnr, channel, cname);
   
   // determine file name
-  std::string name(cname);
-  std::vector<std::string> pt = util_tokenize(name, ',');
-  name = pt[0];
+  std::string name;
+  std::vector<std::string> pt = util_tokenize(std::string(cname), ',');
+  if( pt.size()>0 ) name = pt[0];
   if( mstr::startsWith(name, "0:") )
     name = mstr::drop(name, 2);
 
