@@ -136,7 +136,12 @@ static unsigned long timer_start_us;
 
 #elif defined(ESP_PLATFORM)
 
-#include <esp_rom_sys.h>
+#if ESP_IDF_VERSION < ESP_IDF_VERSION_VAL(5, 0, 0)
+#include "esp_clk.h"
+#define esp_cpu_cycle_count_t uint32_t
+#define esp_cpu_get_cycle_count esp_cpu_get_ccount
+#define esp_rom_get_cpu_ticks_per_us() (esp_clk_cpu_freq()/1000000)
+#endif
 static DRAM_ATTR esp_cpu_cycle_count_t timer_start_cycles, timer_cycles_per_us;
 #define timer_init()         timer_cycles_per_us = esp_rom_get_cpu_ticks_per_us()
 #define timer_reset()        timer_start_cycles = esp_cpu_get_cycle_count()
@@ -145,14 +150,25 @@ static DRAM_ATTR esp_cpu_cycle_count_t timer_start_cycles, timer_cycles_per_us;
 #define timer_wait_until(us) timer_wait_until_(us+0.5)
 FORCE_INLINE_ATTR void timer_wait_until_(uint32_t us)
 {
+  // using esp_cpu_get_cycle_count() instead of esp_timer_get_time() works much
+  // better in timing-critical code since it translates into a single CPU instruction
+  // instead of a library call that may introduce short delays due to flash ROM access
+  // conflicts with the other core
   esp_cpu_cycle_count_t to = us * timer_cycles_per_us;
   while( (esp_cpu_get_cycle_count()-timer_start_cycles) < to );
 }
 
+// keep track whether interrupts are enabled or not (see comments in waitPinDATA/waitPinCLK)
+static bool haveInterrupts = true;
+#undef noInterrupts
+#undef interrupts
+#define noInterrupts() { portDISABLE_INTERRUPTS(); haveInterrupts = false; }
+#define interrupts()   { haveInterrupts = true; portENABLE_INTERRUPTS(); }
+
 #if defined(JDEBUG)
-#define JDEBUGI() pinMode(26, OUTPUT)
-#define JDEBUG0() GPIO.out_w1tc = bit(26)
-#define JDEBUG1() GPIO.out_w1ts = bit(26)
+#define JDEBUGI() pinMode(12, OUTPUT)
+#define JDEBUG0() GPIO.out_w1tc = bit(12)
+#define JDEBUG1() GPIO.out_w1ts = bit(12)
 #endif
 
 // ---------------- other (32-bit) platforms
@@ -208,7 +224,8 @@ static unsigned long timer_start_us;
 #endif
 
 // on ESP32 we need very timing-critical code (i.e. transmitting/receiving data
-// under fast-load protocols) to reside in IRAM
+// under fast-load protocols) to reside in IRAM in order to avoid short delays
+// due to flash ROM access conflicts with the other core
 #ifndef IRAM_ATTR
 #ifdef ESP_PLATFORM
 #error "Expected IRAM_ATTR to be defined"
@@ -327,11 +344,28 @@ bool IECBusHandler::waitPinDATA(bool state, uint16_t timeout)
   // or the timeout is met then exit with error condition
   if( timeout==0 )
     {
+#ifdef ESP_PLATFORM
+      // waiting indefinitely with interrupts disabled on ESP32 is bad because
+      // the interrupt WDT will reboot the system if we wait too long (more than 800ms)
+      // => if interrupts are disabled then briefly enable them every 700ms to "feed" the WDT
+      uint64_t t = esp_timer_get_time();
+      while( readPinDATA()!=state )
+        {
+          if( ((m_flags & P_ATN)!=0) == readPinATN() )
+            return false;
+          else if( !haveInterrupts && (esp_timer_get_time()-t)>700000 )
+            {
+              interrupts(); noInterrupts();
+              t = esp_timer_get_time();
+            }
+        }
+#else
       // timeout is 0 (no timeout), do NOT call micros() as calling micros() may enable
       // interrupts on some platforms
       while( readPinDATA()!=state )
         if( ((m_flags & P_ATN)!=0) == readPinATN() )
           return false;
+#endif
     }
   else
     {
@@ -355,11 +389,28 @@ bool IECBusHandler::waitPinCLK(bool state, uint16_t timeout)
   // or the timeout is met then exit with error condition
   if( timeout==0 )
     {
+#ifdef ESP_PLATFORM
+      // waiting indefinitely with interrupts disabled on ESP32 is bad because
+      // the interrupt WDT will reboot the system if we wait too long (more than 800ms)
+      // => if interrupts are disabled then briefly enable them every 700ms to "feed" the WDT
+      uint64_t t = esp_timer_get_time();
+      while( readPinCLK()!=state )
+        {
+          if( ((m_flags & P_ATN)!=0) == readPinATN() )
+            return false;
+          else if( !haveInterrupts && (esp_timer_get_time()-t)>700000 )
+            {
+              interrupts(); noInterrupts();
+              t = esp_timer_get_time();
+            }
+        }
+#else
       // timeout is 0 (no timeout), do NOT call micros() as calling micros() may enable
       // interrupts on some platforms
       while( readPinCLK()!=state )
         if( ((m_flags & P_ATN)!=0) == readPinATN() )
           return false;
+#endif
     }
   else
     {
