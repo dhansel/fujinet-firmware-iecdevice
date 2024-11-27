@@ -2510,12 +2510,12 @@ void IECBusHandler::task()
          uint8_t numData = m_currentDevice->read(m_buffer, m_bufferSize);
 
          // delay to make sure receiver sees our CLK LOW and enters "new data block" state.
-         // due possible VIC "bad line" it may take receiver up to 120us after
-         // reading bits 6+7 (at FB71) to checking for CLK low (at FB54).
+         // Due to a possible VIC "bad line" plus a possible DRAM refresh delay it may take
+         // the receiver up to 160us after reading bits 6+7 (at FB71) to checking for CLK low (at FB54).
          // If we make it back into transmitJiffyBlock() during that time period
          // then we may already set CLK HIGH again before receiver sees the CLK LOW, 
          // preventing the receiver from going into "new data block" state
-         if( !waitTimeoutFrom(m_timeoutStart, 150) || !transmitJiffyBlock(m_buffer, numData) )
+         if( !waitTimeoutFrom(m_timeoutStart, 175) || !transmitJiffyBlock(m_buffer, numData) )
            {
              // either a transmission error, no more data to send or falling edge on ATN
              m_flags |= P_DONE;
