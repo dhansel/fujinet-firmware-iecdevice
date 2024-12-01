@@ -1,5 +1,5 @@
 /*
- * IEC for FujiApple Rev0
+ * IEC with DolphinDos support
  */
 #ifdef PINMAP_FUJIAPPLE_IEC_DD
 
@@ -10,6 +10,7 @@
 #define PIN_SD_HOST_MISO        GPIO_NUM_19
 #define PIN_SD_HOST_MOSI        GPIO_NUM_23
 #define PIN_SD_HOST_SCK         GPIO_NUM_18
+#define PIN_CARD_DETECT_INV     1           // if 1 then a HIGH input on CD pin means "card present", otherwise inverted
 
 /* UART */
 #define PIN_UART0_RX            GPIO_NUM_3  // fnUART.cpp

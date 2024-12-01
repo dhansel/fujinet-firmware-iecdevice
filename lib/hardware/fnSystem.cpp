@@ -97,10 +97,19 @@ static QueueHandle_t card_detect_evt_queue = NULL;
 
 static void IRAM_ATTR card_detect_isr_handler(void *arg)
 {
-    // Generic default interrupt handler
-    gpio_num_t gpio_num = (gpio_num_t)(int)arg;
-    xQueueSendFromISR(card_detect_evt_queue, &gpio_num, NULL);
-    //Debug_printf("INTERRUPT ON GPIO: %d", gpio_num);
+  static unsigned long t = 0;
+
+  // Generic default interrupt handler
+  gpio_num_t gpio_num = (gpio_num_t)(int)arg;
+
+  // ignore any changes within 750ms after most recent change to ignore bounces
+  if( (fnSystem.millis()-t) > 750 )
+    {
+      xQueueSendFromISR(card_detect_evt_queue, &gpio_num, NULL);
+      t = fnSystem.millis();
+    }
+
+  //Debug_printf("INTERRUPT ON GPIO: %d", gpio_num);
 }
 
 static void card_detect_intr_task(void *arg)
@@ -113,11 +122,18 @@ static void card_detect_intr_task(void *arg)
     for (;;) {
         gpio_num_t gpio_num;
         if(xQueueReceive(card_detect_evt_queue, &gpio_num, portMAX_DELAY)) {
+            // wait 500ms after receiving "change" event to read the status,
+            // oterwise we may see a bounce
+            fnSystem.delay(500);
             int level = gpio_get_level(gpio_num);
             if (card_detect_status == level) {
                 printf("SD Card detect ignored (debounce)\r\n");
             }
+#if PIN_CARD_DETECT_INV>0
+            else if (level == 0) {
+#else
             else if (level == 1) {
+#endif
                 printf("SD Card Ejected, REBOOT!\r\n");
                 fnSystem.reboot();
             }
@@ -125,6 +141,7 @@ static void card_detect_intr_task(void *arg)
                 printf("SD Card Inserted\r\n");
                 fnSDFAT.start();
             }
+
             card_detect_status = level;
         }
     }
@@ -132,6 +149,8 @@ static void card_detect_intr_task(void *arg)
 
 static void setup_card_detect(gpio_num_t pin)
 {
+  // prevent starting multiple instances of card_detect_intr_task
+  if( card_detect_evt_queue==NULL ) {
     // Create a queue to handle card detect event from ISR
     card_detect_evt_queue = xQueueCreate(10, sizeof(gpio_num_t));
     // Start card detect task
@@ -140,6 +159,7 @@ static void setup_card_detect(gpio_num_t pin)
     fnSystem.set_pin_mode(pin, gpio_mode_t::GPIO_MODE_INPUT, SystemManager::pull_updown_t::PULL_NONE, GPIO_INTR_ANYEDGE);
     // Add the card detect handler
     gpio_isr_handler_add(pin, card_detect_isr_handler, (void *)pin);
+  }
 }
 // ESP_PLATFORM
 #else
