@@ -54,14 +54,16 @@
 #define timer_reset()        TCNT1L=0
 #define timer_start()        TCCR1B |= bit(CS11)
 #define timer_stop()         TCCR1B &= ~bit(CS11)
-#define timer_wait_until(us) while( TCNT1L < ((uint8_t) (2*(us))) )
+#define timer_less_than(us)  (TCNT1L < ((uint8_t) (2*(us))))
+#define timer_wait_until(us) while( timer_less_than(us) )
 #else
 // use 8-bit timer 2 with /8 prescaler
 #define timer_init()         { TCCR2A=0; TCCR2B=0; }
 #define timer_reset()        TCNT2=0
 #define timer_start()        TCCR2B |= bit(CS21)
 #define timer_stop()         TCCR2B &= ~bit(CS21)
-#define timer_wait_until(us) while( TCNT2 < ((uint8_t) (2*(us))) )
+#define timer_less_than(us)  (TCNT2 < ((uint8_t) (2*(us))))
+#define timer_wait_until(us) while( timer_less_than(us) )
 #endif
 
 //NOTE: Must disable SUPPORT_DOLPHIN, otherwise no pins left for debugging (except Mega)
@@ -86,7 +88,8 @@ static uint16_t timer_ticks_diff(uint16_t t0, uint16_t t1) { return ((t0 < t1) ?
 #define timer_reset()        timer_start_ticks = R_AGT0->AGT
 #define timer_start()        timer_start_ticks = R_AGT0->AGT
 #define timer_stop()         while(0)
-#define timer_wait_until(us) while( timer_ticks_diff(timer_start_ticks, R_AGT0->AGT) < ((int) (us*3)) )
+#define timer_less_than(us)  (timer_ticks_diff(timer_start_ticks, R_AGT0->AGT) < ((int) (us*3)))
+#define timer_wait_until(us) while( timer_less_than(us) )
 
 #ifdef JDEBUG
 #define JDEBUGI() pinMode(1, OUTPUT)
@@ -106,7 +109,8 @@ static uint32_t timer_ticks_diff(uint32_t t0, uint32_t t1) { return ((t0 < t1) ?
 #define timer_reset()        timer_start_ticks = SysTick->VAL;
 #define timer_start()        timer_start_ticks = SysTick->VAL;
 #define timer_stop()         while(0)
-#define timer_wait_until(us) while( timer_ticks_diff(timer_start_ticks, SysTick->VAL) < ((int) (us*84)) )
+#define timer_less_than(us)  (timer_ticks_diff(timer_start_ticks, SysTick->VAL) < ((int) (us*84)))
+#define timer_wait_until(us) while( timer_less_than(us) )
 
 #ifdef JDEBUG
 #define JDEBUGI() pinMode(2, OUTPUT)
@@ -124,7 +128,8 @@ static unsigned long timer_start_us;
 #define timer_reset()        timer_start_us = time_us_32()
 #define timer_start()        timer_start_us = time_us_32()
 #define timer_stop()         while(0)
-#define timer_wait_until(us) while( (time_us_32()-timer_start_us) < ((int) (us+0.5)) )
+#define timer_less_than(us)  ((time_us_32()-timer_start_us) < ((int) (us+0.5)))
+#define timer_wait_until(us) while( timer_less_than(us) )
 
 #ifdef JDEBUG
 #define JDEBUGI() pinMode(20, OUTPUT)
@@ -147,6 +152,7 @@ static DRAM_ATTR esp_cpu_cycle_count_t timer_start_cycles, timer_cycles_per_us;
 #define timer_reset()        timer_start_cycles = esp_cpu_get_cycle_count()
 #define timer_start()        timer_start_cycles = esp_cpu_get_cycle_count()
 #define timer_stop()         while(0)
+#define timer_less_than(us)  ((esp_cpu_get_cycle_count()-timer_start_cycles) < ((us+0.5)*timer_cycles_per_us))
 #define timer_wait_until(us) timer_wait_until_(us+0.5)
 FORCE_INLINE_ATTR void timer_wait_until_(uint32_t us)
 {
@@ -180,7 +186,8 @@ static unsigned long timer_start_us;
 #define timer_reset()        timer_start_us = micros()
 #define timer_start()        timer_start_us = micros()
 #define timer_stop()         while(0)
-#define timer_wait_until(us) while( (micros()-timer_start_us) < ((int) (us+0.5)) )
+#define timer_less_than(us)  ((micros()-timer_start_us) < ((int) (us+0.5)))
+#define timer_wait_until(us) while( timer_less_than(us) )
 
 #if defined(JDEBUG) && defined(ESP_PLATFORM)
 #define JDEBUGI() pinMode(26, OUTPUT)
@@ -268,6 +275,13 @@ static IRAM_ATTR void delayMicrosecondsISafe(uint16_t t)
 #define S_EPYX_LOAD              0x0400  // Detected Epyx "load" request
 #define S_EPYX_SECTOROP          0x0800  // Detected Epyx "sector operation" request
 
+#define TC_NONE      0
+#define TC_DATA_LOW  1
+#define TC_DATA_HIGH 2
+#define TC_CLK_LOW   3
+#define TC_CLK_HIGH  4
+
+
 IECBusHandler *IECBusHandler::s_bushandler1 = NULL, *IECBusHandler::s_bushandler2 = NULL;
 
 
@@ -321,19 +335,61 @@ bool IRAM_ATTR IECBusHandler::readPinRESET()
 }
 
 
-bool IECBusHandler::waitTimeoutFrom(uint32_t start, uint16_t timeout)
+bool IECBusHandler::waitTimeout(uint16_t timeout, uint8_t cond)
 {
-  while( (micros()-start)<timeout )
-    if( (m_flags & P_ATN)==0 && !readPinATN() )
-      return false;
-  
-  return true;
-}
+  // This function may be called in code where interrupts are disabled.
+  // Calling micros() when interrupts are disabled does not work on all
+  // platforms, some return incorrect values, others may re-enable interrupts
+  // So we use our high-precision timer. However, on some platforms that timer
+  // can only count up to 127 microseconds so we have to go in small increments.
 
+  timer_init();
+  timer_reset();
+  timer_start();
+  while( true )
+    {
+      switch( cond )
+        {
+        case TC_DATA_LOW:
+          if( readPinDATA() == LOW  ) return true;
+          break;
 
-bool IECBusHandler::waitTimeout(uint16_t timeout)
-{
-  return waitTimeoutFrom(micros(), timeout);
+        case TC_DATA_HIGH:
+          if( readPinDATA() == HIGH ) return true;
+          break;
+
+        case TC_CLK_LOW:
+          if( readPinCLK()  == LOW  ) return true;
+          break;
+
+        case TC_CLK_HIGH:
+          if( readPinCLK()  == HIGH ) return true;
+          break;
+        }
+
+      if( ((m_flags & P_ATN)!=0) == readPinATN() )
+        {
+          // ATN changed state => abort with FALSE
+          return false;
+        }
+      else if( timeout<100 )
+        {
+          if( !timer_less_than(timeout) )
+            {
+              // timeout has expired => if there was no condition to wait for
+              // then return TRUE, otherwise return FALSE (because the condition was not met)
+              return cond==TC_NONE;
+            }
+        }
+      else if( !timer_less_than(100) )
+        {
+          // subtracting from the timout value like below is not 100% precise (we may wait
+          // a few microseconds too long because the timer may already have counter further)
+          // but this function is not meant for SUPER timing-critical code so that's ok.
+          timer_reset();
+          timeout -= 100;
+        }
+    }
 }
 
 
@@ -360,8 +416,7 @@ bool IECBusHandler::waitPinDATA(bool state, uint16_t timeout)
             }
         }
 #else
-      // timeout is 0 (no timeout), do NOT call micros() as calling micros() may enable
-      // interrupts on some platforms
+      // timeout is 0 (no timeout)
       while( readPinDATA()!=state )
         if( ((m_flags & P_ATN)!=0) == readPinATN() )
           return false;
@@ -369,10 +424,8 @@ bool IECBusHandler::waitPinDATA(bool state, uint16_t timeout)
     }
   else
     {
-      uint32_t start = micros();
-      while( readPinDATA()!=state )
-        if( (((m_flags & P_ATN)!=0) == readPinATN()) || (uint16_t) (micros()-start)>=timeout )
-          return false;
+      // if waitTimeout for the given condition fails then exit
+      if( !waitTimeout(timeout, state ? TC_DATA_HIGH : TC_DATA_LOW) ) return false;
     }
 
   // DATA LOW can only be properly detected if ATN went HIGH->LOW
@@ -405,8 +458,7 @@ bool IECBusHandler::waitPinCLK(bool state, uint16_t timeout)
             }
         }
 #else
-      // timeout is 0 (no timeout), do NOT call micros() as calling micros() may enable
-      // interrupts on some platforms
+      // timeout is 0 (no timeout)
       while( readPinCLK()!=state )
         if( ((m_flags & P_ATN)!=0) == readPinATN() )
           return false;
@@ -414,10 +466,8 @@ bool IECBusHandler::waitPinCLK(bool state, uint16_t timeout)
     }
   else
     {
-      uint32_t start = micros();
-      while( readPinCLK()!=state )
-        if( (((m_flags & P_ATN)!=0) == readPinATN()) || (uint16_t) (micros()-start)>=timeout )
-          return false;
+      // if waitTimeout for the given condition fails then exit
+      if( !waitTimeout(timeout, state ? TC_CLK_HIGH : TC_CLK_LOW) ) return false;
     }
   
   return true;
@@ -982,8 +1032,8 @@ bool IRAM_ATTR IECBusHandler::parallelCableDetect()
   // which relies on the IRQ handler above
 
 #if defined(IOREG_TYPE)
-  volatile IOREG_TYPE *regHandshakeReceive = portInputRegister(digitalPinToPort(m_pinDolphinHandshakeReceive));
-  volatile IOREG_TYPE  bitHandshakeReceive = digitalPinToBitMask(m_pinDolphinHandshakeReceive);
+  volatile const IOREG_TYPE *regHandshakeReceive = portInputRegister(digitalPinToPort(m_pinDolphinHandshakeReceive));
+  volatile IOREG_TYPE bitHandshakeReceive = digitalPinToBitMask(m_pinDolphinHandshakeReceive);
 #endif
 
   // wait for handshake signal going LOW until ATN goes high
@@ -1094,8 +1144,9 @@ void IECBusHandler::enableParallelPins()
       digitalWrite(m_pinDolphinHandshakeTransmit, LOW);
       pinModeFastExt(m_pinDolphinHandshakeTransmit, m_regDolphinHandshakeTransmitMode, m_bitDolphinHandshakeTransmit, INPUT);
       
-      // initialize handshake receive
-      pinMode(m_pinDolphinHandshakeReceive, INPUT); 
+      // initialize handshake receive (using INPUT_PULLUP to avoid undefined behavior
+      // when parallel cable is not connected)
+      pinMode(m_pinDolphinHandshakeReceive, INPUT_PULLUP);
 
       // For 8-bit AVR platforms (Arduino Uno R3, Arduino Mega) the interrupt latency combined
       // with the comparatively slow clock speed leads to reduced performance during load/save
@@ -2566,7 +2617,9 @@ void IECBusHandler::task()
          // If we make it back into transmitJiffyBlock() during that time period
          // then we may already set CLK HIGH again before receiver sees the CLK LOW, 
          // preventing the receiver from going into "new data block" state
-         if( !waitTimeoutFrom(m_timeoutStart, 175) || !transmitJiffyBlock(m_buffer, numData) )
+         while( (micros()-m_timeoutStart)<175 );
+
+         if( !transmitJiffyBlock(m_buffer, numData) )
            {
              // either a transmission error, no more data to send or falling edge on ATN
              m_flags |= P_DONE;

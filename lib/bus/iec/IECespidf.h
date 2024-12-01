@@ -33,15 +33,16 @@
 
 typedef void (*interruptFcn)(void *);
 
-#define INPUT  GPIO_MODE_INPUT
-#define OUTPUT GPIO_MODE_OUTPUT
-#define LOW    0
-#define HIGH   1
-#define FALLING  GPIO_INTR_NEGEDGE
-#define RISING   GPIO_INTR_POSEDGE
+#define INPUT         0x0
+#define OUTPUT        0x1
+#define INPUT_PULLUP  0x2
+#define LOW           0x0
+#define HIGH          0x1
+#define FALLING       GPIO_INTR_NEGEDGE
+#define RISING        GPIO_INTR_POSEDGE
 #define bit(n) (1<<(n))
 #define digitalWrite(pin, v) gpio_set_level((gpio_num_t) pin, v);
-#define pinMode(pin, mode)   { gpio_reset_pin((gpio_num_t) pin); gpio_set_direction((gpio_num_t)pin, mode); }
+#define pinMode(pin, mode)   { gpio_reset_pin((gpio_num_t) pin); gpio_set_direction((gpio_num_t)pin, mode==OUTPUT ? GPIO_MODE_OUTPUT : GPIO_MODE_INPUT); if( mode==INPUT_PULLUP ) gpio_pullup_en((gpio_num_t) pin); }
 #define digitalPinToGPIONumber(digitalPin) (digitalPin)
 #define digitalPinToBitMask(pin) (1UL << (digitalPinToGPIONumber(pin)&31))
 #define portInputRegister(port)  ((volatile uint32_t*)((port)?GPIO_IN1_REG:GPIO_IN_REG))

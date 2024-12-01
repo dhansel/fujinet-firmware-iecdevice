@@ -105,8 +105,7 @@ class IECBusHandler
   inline void writePinCLK(bool v);
   inline void writePinDATA(bool v);
   void writePinCTRL(bool v);
-  bool waitTimeoutFrom(uint32_t start, uint16_t timeout);
-  bool waitTimeout(uint16_t timeout);
+  bool waitTimeout(uint16_t timeout, uint8_t cond = 0);
   bool waitPinDATA(bool state, uint16_t timeout = 1000);
   bool waitPinCLK(bool state, uint16_t timeout = 1000);
 
