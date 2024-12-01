@@ -26,6 +26,15 @@ void systemBus::setup()
 {
   Debug_printf("IEC systemBus::setup()\r\n");
   begin();
+#ifdef SUPPORT_JIFFY
+  Debug_printf("JiffyDOS protocol supported\r\n");
+#endif
+#ifdef SUPPORT_EPYX
+  Debug_printf("Epyx FastLoad protocol supported\r\n");
+#endif
+#ifdef SUPPORT_DOLPHIN
+  Debug_printf("DolphinDOS protocol supported\r\n");
+#endif
 }
 
 
