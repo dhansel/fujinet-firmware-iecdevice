@@ -329,14 +329,18 @@ void iecFuji::process_basic_commands()
         net_scan_result_basic();
     else if (payload.find("scan") != std::string::npos)
         net_scan_networks_basic();
+    else if (payload.find("wifienable") != std::string::npos)
+      { Config.store_wifi_enabled(true); Config.save(); }
+    else if (payload.find("wifidisable") != std::string::npos)
+      { Config.store_wifi_enabled(false); Config.save(); }
     else if (payload.find("wifistatus") != std::string::npos)
         net_get_wifi_status_basic();
     else if (payload.find("mounthost") != std::string::npos)
         mount_host_basic();
-    else if (payload.find("mountdrive") != std::string::npos)
-        disk_image_mount_basic();
     else if (payload.find("unmountdrive") != std::string::npos)
         disk_image_umount_basic();
+    else if (payload.find("mountdrive") != std::string::npos)
+        disk_image_mount_basic();
     else if (payload.find("opendir") != std::string::npos)
         open_directory_basic();
     else if (payload.find("readdir") != std::string::npos)
