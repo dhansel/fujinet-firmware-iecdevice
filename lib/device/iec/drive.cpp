@@ -406,6 +406,15 @@ uint8_t iecChannelHandlerDir::readBufferData()
       else
         {
           // no more entries => footer
+#ifdef SUPPORT_DOLPHIN
+          // DolphinDos' MultiDubTwo copy program needs the "BLOCKS FREE" footer line, otherwise it aborts when reading source
+          uint32_t free = m_dir->media_image.size() ? m_dir->media_blocks_free : std::min((int) m_dir->getAvailableSpace()/254, 65535);
+          m_data[0] = 1;
+          m_data[1] = 1;
+          m_data[2] = free&255;
+          m_data[3] = free/256;
+          strcpy((char *) m_data+4, "BLOCKS FREE.");
+#else
           uint32_t free = m_dir->media_image.size() ? m_dir->media_blocks_free : 0;
           m_data[0] = 1;
           m_data[1] = 1;
@@ -415,6 +424,7 @@ uint8_t iecChannelHandlerDir::readBufferData()
             strcpy((char *) m_data+4, "BLOCKS FREE.");
           else
             sprintf((char *) m_data+4, CBM_DELETE CBM_DELETE "%sBYTES FREE.", mstr::formatBytes(m_dir->getAvailableSpace()).c_str());
+#endif
           int n = 4+strlen((char *) m_data+4);
           while( n<29 ) m_data[n++]=' ';
           m_data[29] = 0;
@@ -481,6 +491,10 @@ void iecDrive::open(uint8_t channel, const char *cname)
       name = mstr::drop(name, 2);
     }      
 
+  // file name officially ends at first "shifted space" (0xA0) character
+  size_t i = name.find('\xa0');
+  if( i != std::string::npos ) name = name.substr(0, i);
+
   Debug_printv("opening channel[%d] m_cwd[%s] name[%s] mode[%s]", channel, m_cwd->url.c_str(), name.c_str(), 
                mode==std::ios_base::out ? (overwrite ? "replace" : "write") : "read");
 
@@ -543,6 +557,11 @@ void iecDrive::open(uint8_t channel, const char *cname)
             {
               Debug_printv("Error: file doesn't exist [%s]", f->url.c_str());
               setStatusCode(ST_FILE_NOT_FOUND);
+            }
+          else if( (mode == std::ios_base::out) && f->media_image.size()>0 )
+            {
+              Debug_printv("Error: writing to files on disk media not supported [%s]", f->url.c_str());
+              setStatusCode(ST_WRITE_PROTECT);
             }
           else if( (mode == std::ios_base::out) && f->exists() && !overwrite )
             {
@@ -692,6 +711,21 @@ void iecDrive::execute(const char *cmd, uint8_t cmdLen)
       setStatusCode(ST_OK);
     }
 #endif  
+#ifdef SUPPORT_DOLPHIN
+  else if( command=="ED+" || command=="ED-" )
+    {
+      enableDolphinDosSupport(command[2]=='+');
+      setStatusCode(ST_OK);
+    }
+  else if( command == "M-R\xfa\x02\x03" )
+    {
+      // hack: DolphinDos' MultiDubTwo copy program reads 02FA-02FC to determine
+      // number of free blocks => pretend we have 664 (0298h) blocks available
+      m_statusCode = ST_OK;
+      uint8_t data[3] = {0x98, 0, 0x02};
+      setStatus((char *) data, 3);
+    }
+#endif
   else
     {
       setStatusCode(ST_SYNTAX_ERROR_31);
