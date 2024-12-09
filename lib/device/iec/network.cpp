@@ -117,8 +117,6 @@ void iecNetwork::iec_open()
         return;
     }
 
-    channel_data.protocol->interruptEnable = 1; // FIXME
-
     // Set login and password if they exist
     if (!channel_data.login.empty()) {
         // TODO: Change the NetworkProtocol password and login to STRINGS FFS
@@ -1072,7 +1070,7 @@ uint8_t iecNetwork::write(uint8_t channel, uint8_t *buffer, uint8_t bufferSize)
 {
   if( bufferSize==0 ) return 0;
 
-  Debug_printv("iecNetwork::write(#%d, %d, %d) = %s", m_devnr, channel, bufferSize, mstr::toHex(buffer, bufferSize).c_str());
+  //Debug_printv("iecNetwork::write(#%d, %d, %d) = %s", m_devnr, channel, bufferSize, mstr::toHex(buffer, bufferSize).c_str());
 
   int channelId = commanddata.channel;
   auto& channel_data = network_data_map[channelId];
