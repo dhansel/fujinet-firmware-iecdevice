@@ -462,7 +462,7 @@ iecDrive::~iecDrive()
 }
 
 
-void iecDrive::open(uint8_t channel, const char *cname)
+bool iecDrive::open(uint8_t channel, const char *cname)
 {
   Debug_printv("iecDrive::open(#%d, %d, \"%s\")", m_devnr, channel, cname);
   
@@ -516,7 +516,14 @@ void iecDrive::open(uint8_t channel, const char *cname)
       // get file
       MFile *f = m_cwd->cd(mstr::toUTF8(name));
 
-      if( f->isDirectory() )
+      if( f == nullptr || f->url.empty() )
+        {
+          Debug_printv("Error: could not find file system for URL [%s]", name.c_str());
+          setStatusCode(ST_FILE_NOT_FOUND);
+          if( f!=nullptr ) delete f;
+          f = nullptr;
+        }
+      else if( f->isDirectory() )
         {
           if( mode == std::ios_base::in )
             {
@@ -616,6 +623,8 @@ void iecDrive::open(uint8_t channel, const char *cname)
       
       delete f;
     }
+
+  return m_channels[channel]!=NULL;
 }
 
 

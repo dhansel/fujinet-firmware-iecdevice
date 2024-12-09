@@ -12,7 +12,10 @@
 
 systemBus IEC;
 
-systemBus::systemBus() : IECBusHandler(PIN_IEC_ATN, PIN_IEC_CLK_OUT, PIN_IEC_DATA_OUT, PIN_IEC_RESET)
+systemBus::systemBus() : IECBusHandler(PIN_IEC_ATN, PIN_IEC_CLK_OUT, PIN_IEC_DATA_OUT,
+                                       PIN_IEC_RESET==GPIO_NUM_NC ? 0xFF : PIN_IEC_RESET,
+                                       0xFF,
+                                       PIN_IEC_SRQ==GPIO_NUM_NC   ? 0xFF : PIN_IEC_SRQ)
 {
 #ifdef SUPPORT_DOLPHIN
   setDolphinDosPins(PIN_IEC_PARALLEL_HT, PIN_IEC_PARALLEL_HR, 

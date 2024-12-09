@@ -19,6 +19,7 @@
 #include "../../../include/debug.h"
 #include "../../../include/pinmap.h"
 
+#include "IECDevice.h"
 #include "IECBusHandler.h"
 
 #define BUS_DEVICEID_PRINTER 4

@@ -6,7 +6,7 @@
 /* SD Card */
 #define PIN_CARD_DETECT         GPIO_NUM_35 // fnSystem.h
 #define PIN_CARD_DETECT_FIX     GPIO_NUM_35 // fnSystem.h
-#define PIN_SD_HOST_CS          GPIO_NUM_5  // fnFsSD.cpp
+#define PIN_SD_HOST_CS          GPIO_NUM_12 // (shared with PIN_LED_BUS) fnFsSD.cpp
 #define PIN_SD_HOST_MISO        GPIO_NUM_19
 #define PIN_SD_HOST_MOSI        GPIO_NUM_23
 #define PIN_SD_HOST_SCK         GPIO_NUM_18
@@ -15,8 +15,8 @@
 /* UART */
 #define PIN_UART0_RX            GPIO_NUM_3  // fnUART.cpp
 #define PIN_UART0_TX            GPIO_NUM_1
-#define PIN_UART1_RX            GPIO_NUM_9
-#define PIN_UART1_TX            GPIO_NUM_10
+#define PIN_UART1_RX            GPIO_NUM_NC
+#define PIN_UART1_TX            GPIO_NUM_NC
 #define PIN_UART2_RX            GPIO_NUM_NC
 #define PIN_UART2_TX            GPIO_NUM_NC
 
@@ -27,7 +27,7 @@
 
 /* LEDs */
 #define PIN_LED_WIFI            GPIO_NUM_2  // led.cpp
-#define PIN_LED_BUS             GPIO_NUM_12 // 4 FN
+#define PIN_LED_BUS             GPIO_NUM_12 // (shared with PIN_SD_HOST_CS), 4 FN
 #define PIN_LED_BT              GPIO_NUM_NC // No BT LED
 
 /* Audio Output */
@@ -42,7 +42,7 @@
 #define PIN_IEC_CLK_OUT         GPIO_NUM_33
 #define PIN_IEC_DATA_IN         GPIO_NUM_32
 #define PIN_IEC_DATA_OUT        GPIO_NUM_32
-#define PIN_IEC_SRQ             GPIO_NUM_NC
+#define PIN_IEC_SRQ             GPIO_NUM_5
 
 // iec.c, pins for DolphinDos parallel cable
 #define PIN_IEC_PARALLEL_HT     GPIO_NUM_4  // handhake transmit (FLAG2 on C64 user port)

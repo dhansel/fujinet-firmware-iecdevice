@@ -99,7 +99,7 @@ class iecDrive : public IECFileDevice
 
  private:
   // open file "name" on channel
-  virtual void open(uint8_t channel, const char *name);
+  virtual bool open(uint8_t channel, const char *name);
 
   // close file on channel
   virtual void close(uint8_t channel);

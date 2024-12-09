@@ -81,10 +81,9 @@ public:
 
     std::unordered_map<uint8_t, NetworkData> network_data_map;
 
-    //virtual void poll_interrupt(unsigned char c) override;
-
 protected:
-    virtual void open(uint8_t channel, const char *name) override;
+    virtual void task() override;
+    virtual bool open(uint8_t channel, const char *name) override;
     virtual void close(uint8_t channel) override;
     virtual uint8_t write(uint8_t channel, uint8_t *buffer, uint8_t bufferSize) override;
     virtual uint8_t read(uint8_t channel, uint8_t *buffer, uint8_t bufferSize) override;

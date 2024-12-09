@@ -52,27 +52,6 @@ void iecNetwork::init()
 }
 
 
-#if 0
-void iecNetwork::poll_interrupt(uint8_t c)
-{
-    NetworkStatus ns;
-    auto& protocol = network_data_map[c].protocol;
-    if (protocol)
-    {
-        if (!protocol->interruptEnable)
-            return;
-
-        protocol->fromInterrupt = true;
-        protocol->status(&ns);
-        protocol->fromInterrupt = false;
-
-        if (ns.rxBytesWaiting > 0 || ns.connected == 0)
-            IEC.assert_interrupt();
-    }
-}
-#endif
-
-
 void iecNetwork::iec_open()
 {
     int channelId = commanddata.channel;
@@ -138,6 +117,8 @@ void iecNetwork::iec_open()
         return;
     }
 
+    channel_data.protocol->interruptEnable = 1; // FIXME
+
     // Set login and password if they exist
     if (!channel_data.login.empty()) {
         // TODO: Change the NetworkProtocol password and login to STRINGS FFS
@@ -160,11 +141,10 @@ void iecNetwork::iec_open()
         return;
     }
 
-    // assert SRQ
-    //IEC.assert_interrupt();
-
     channel_data.json = std::make_unique<FNJSON>();
     channel_data.json->setProtocol(channel_data.protocol.get());
+
+    if( channel_data.protocol->interruptEnable ) sendSRQ();
 }
 
 
@@ -1005,7 +985,7 @@ void iecNetwork::set_open_params()
 }
 
 
-void iecNetwork::open(uint8_t channel, const char *name)
+bool iecNetwork::open(uint8_t channel, const char *name)
 {
   Debug_printv("iecNetwork::open(#%d, %d, \"%s\")", m_devnr, channel, name);
 
@@ -1013,16 +993,14 @@ void iecNetwork::open(uint8_t channel, const char *name)
   payload = std::string(name);
   iec_open();
   clearStatus();
+
+  return true;
 }
 
 
 void iecNetwork::close(uint8_t channel)
 {
   Debug_printv("iecNetwork::close(#%d, %d)", m_devnr, channel);
-
-  auto& channel_data = network_data_map[channel];
-  if( channel_data.transmitBuffer.size()>0 )
-    transmit(channel_data);
 
   commanddata.channel = channel;
   iec_close();
@@ -1058,7 +1036,7 @@ bool iecNetwork::receive(NetworkData &channel_data, uint16_t rxBytes)
   
   if (!channel_data.protocol) 
     {
-      Debug_printv("No protocol set");
+      //Debug_printv("No protocol set");
       return false;
     }
   
@@ -1092,24 +1070,20 @@ bool iecNetwork::receive(NetworkData &channel_data, uint16_t rxBytes)
 
 uint8_t iecNetwork::write(uint8_t channel, uint8_t *buffer, uint8_t bufferSize)
 {
-  Debug_printv("iecNetwork::write(#%d, %d, %d)", m_devnr, channel, bufferSize);
+  if( bufferSize==0 ) return 0;
+
+  Debug_printv("iecNetwork::write(#%d, %d, %d) = %s", m_devnr, channel, bufferSize, mstr::toHex(buffer, bufferSize).c_str());
 
   int channelId = commanddata.channel;
   auto& channel_data = network_data_map[channelId];
 
-  if( channel_data.transmitBuffer.size()>=2048 )
-    if( !transmit(channel_data) )
-      return 0;
-
-  channel_data.transmitBuffer += string((char *) buffer, bufferSize);
-  return bufferSize;
+  channel_data.transmitBuffer = string((char *) buffer, bufferSize);
+  return transmit(channel_data) ? bufferSize : 0;
 }
 
 
 uint8_t iecNetwork::read(uint8_t channel, uint8_t *buffer, uint8_t bufferSize)
 {
-  Debug_printv("iecNetwork::read(#%d, %d, %d)", m_devnr, channel, bufferSize);
-
   int channelId = commanddata.channel;
   auto& channel_data = network_data_map[channelId];
 
@@ -1120,6 +1094,8 @@ uint8_t iecNetwork::read(uint8_t channel, uint8_t *buffer, uint8_t bufferSize)
   uint8_t n = std::min((int) channel_data.receiveBuffer.size(), (int) bufferSize);
   memcpy(buffer, channel_data.receiveBuffer.data(), n);
   channel_data.receiveBuffer.erase(0, n);
+
+  //if( n>0 ) Debug_printv("iecNetwork::read(#%d, %d, %d)", m_devnr, channel, bufferSize);
   return n;
 }
 
@@ -1205,7 +1181,7 @@ void iecNetwork::reset()
   Debug_printv("iecNetwork::reset()");
 
   // close all channels
-  for(auto it=network_data_map.begin(); it!=network_data_map.begin(); it++)
+  for(auto it=network_data_map.begin(); it!=network_data_map.end(); it++)
     {
       commanddata.channel = it->first;
       iec_close();
@@ -1217,6 +1193,32 @@ void iecNetwork::reset()
 
   // process reset in parent class
   IECFileDevice::reset();
+}
+
+
+void iecNetwork::task()
+{
+  IECFileDevice::task();
+
+  static uint32_t nextSRQ = 0;
+  NetworkStatus ns;
+
+  if( fnSystem.millis()>=nextSRQ )
+    {
+      for(auto it=network_data_map.begin(); it!=network_data_map.end(); it++)
+        {
+          auto& protocol = it->second.protocol;
+          if( protocol && protocol->interruptEnable )
+            {
+              protocol->status(&ns);
+              if( ns.rxBytesWaiting > 0 /*|| ns.connected == 0*/ )
+                {
+                  sendSRQ();
+                  nextSRQ = fnSystem.millis() + 10;
+                }
+            }
+        }
+    }
 }
 
 
